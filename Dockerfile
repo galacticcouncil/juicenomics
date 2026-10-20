@@ -1,0 +1,27 @@
+FROM node:24-alpine AS build
+
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --no-audit --no-fund
+
+COPY tsconfig*.json vite.config.ts vitest.config.ts index.html ./
+COPY src ./src
+COPY test ./test
+COPY public ./public
+RUN npm run build
+ARG VCS_REF
+RUN printf '%s\n' "$VCS_REF" > /app/dist/version.txt
+
+FROM nginxinc/nginx-unprivileged:stable-alpine
+
+ARG VCS_REF
+LABEL org.opencontainers.image.title="Juicer economics simulator" \
+      org.opencontainers.image.source="https://github.com/galacticcouncil/juicer-sim" \
+      org.opencontainers.image.revision="${VCS_REF}"
+
+COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=build /app/dist /usr/share/nginx/html
+
+EXPOSE 8080
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD wget -q -O /dev/null http://127.0.0.1:8080/healthz || exit 1

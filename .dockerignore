@@ -1,0 +1,17 @@
+*
+!package.json
+!package-lock.json
+!tsconfig*.json
+!vite.config.ts
+!vitest.config.ts
+!index.html
+!src/
+!src/**
+!test/
+!test/**
+!public/
+!public/**
+!docker/
+!docker/nginx.conf
+**/.env
+**/.env.*
