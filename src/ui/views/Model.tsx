@@ -18,7 +18,7 @@ gross      ℓ̄ · s                                = ${fmtPct(v.gross)}   (ℓ
 churn      N · L · [P_up·c·ℓ(1−e^−a) + P_down·u·ℓ(e^b−1)] = ${fmtPct(v.churn)}
            N = ${v.bands.eventsPerYear.toFixed(1)} rebalances / yr, P_up = ${fmtPct(v.bands.pRelever, 0)}
 flows      L·ℓ·(inflow·c + outflow·u)  (pooled costs only) = ${fmtPct(v.flows)}
-fee        f · max(0, ${p.fees.feeBase === "gross" ? "gross" : "gross − costs"})              = ${fmtPct(v.feeTaken)}
+fee        f · max(0, ${p.fees.feeBase === "gross" ? "gross" : p.fees.feeBase === "yield" ? "gross − costs" : "gross + vault interest − costs"})              = ${fmtPct(v.feeTaken)}
 net        gross − churn − flows − fee          = ${fmtPct(v.net)}
 break-even 365 · c · L / s                      = ${r.breakEven.entryDays.toFixed(0)} days`}</div>
         <h3>Conventions</h3>
@@ -26,7 +26,7 @@ break-even 365 · c · L / s                      = ${r.breakEven.entryDays.toFi
           <li>Entry cost c = arb threshold + 2 × pool fee + one tranche's impact + solver. With Lark's 15 bps arb this is 24.5 bps, as measured on Lark 4.</li>
           <li>Unwind cost u is fitted to the 16 Oct pool-143 sweep: a full unwind gains back part of the rich pool's premium.</li>
           <li>Rebalance churn comes from band geometry. The collateral's log price is a drifted Brownian motion that resets to target LTV when it leaves the band. The barriers are widened for discrete monitoring (Broadie–Glasserman–Kou). This matches the 20 Oct Monte Carlo within a few percent.</li>
-          <li>The protocol fee is taken on yield after costs, like the contracts: in a deficit nothing is harvested, so no fee. The study-style "fee on gross" is a setting.</li>
+          <li>Like the contracts, the protocol fee is taken on every harvest, including the slice that services the vault's HOLLAR interest, and after trading costs: in a deficit nothing is harvested, so no fee. "Yield after interest" and the study-style "fee on gross" are settings.</li>
           <li>Pooled cost attribution (today) spreads newcomers' entry costs and leavers' unwind costs over everyone. "Own" charges them to whoever causes them.</li>
           <li>Protocol revenue counts HOLLAR interest, which has no suppliers, so all of it goes to the protocol. It also counts the collateral fee, pool 143 fees (the treasury holds ~100% of the pool), deposit fees and the desk spread, less incentives.</li>
         </ul>

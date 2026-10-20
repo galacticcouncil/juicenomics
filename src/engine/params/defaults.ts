@@ -33,7 +33,7 @@ export const LARK4: Params = Object.freeze({
     primePrice: lark4.prime.price,
     hollarRate: lark4.hollar.borrowApr,
     hollarMark: 0.9992,
-    corr: 0.8,
+    corr: 0.87,
     pathModel: "gbm",
     stress: "none",
     jumps: false,
@@ -73,12 +73,12 @@ export const LARK4: Params = Object.freeze({
     inventoryHollar: 100_000,
     refillHours: 24,
   },
-  costs: { mode: "derived", entryBps: 24.5, unwindBps: 8.5, harvestSwapBps: 20 },
+  costs: { mode: "derived", entryBps: 24.5, unwindBps: 8.5, harvestSwapBps: 20, churnModel: "pool" },
   fees: {
     protocolFeeBps: v.eth.protocolFeeBps,
     discountMain: lark4.discountBps / 1e4,
     discountLoop: 0,
-    feeBase: "afterCosts",
+    feeBase: "contract",
   },
   depositFee: { on: false, auto: false, bps: 0, dest: "loop" },
   improvements: {

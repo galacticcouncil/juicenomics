@@ -109,6 +109,39 @@ export function evaluate(p: Params): ClosedResult {
   const cE = c.entryBps / 1e4;
   const cU = c.unwindBps / 1e4;
 
+  // trading volumes per vault, $ per year
+  const vol = {} as Record<VaultKey, { entry: number; unwind: number; churnEntry: number; churnUnwind: number }>;
+  for (const k of KEYS) {
+    const t = tvl(k);
+    const br = bandRes[k];
+    const v = p.vaults[k];
+    const inflowFrac = t > 0 ? inflow(k) / t : 0;
+    const churnEntry = L * br.releverPerYear * t;
+    const churnUnwind = L * br.deleverPerYear * t;
+    vol[k] = {
+      churnEntry,
+      churnUnwind,
+      entry: churnEntry + L * inflowFrac * t * v.bandTarget,
+      unwind: churnUnwind + L * v.outflowRate * t * v.bandTarget,
+    };
+  }
+  // buys and sells that meet in pool 143 only pay the round trip; the excess pays the arb's band
+  const rt = c.roundTripBps / 1e4;
+  const tradingCost = (entry: number, unwind: number) => {
+    if (p.costs.churnModel === "constant") return entry * cE + unwind * cU;
+    const matched = Math.min(entry, unwind);
+    return matched * rt + (entry - matched) * cE + (unwind - matched) * cU;
+  };
+  const pooled = p.improvements.attribution === "pooled";
+  const totalEntry = KEYS.reduce((a, k) => a + vol[k].entry, 0);
+  const totalUnwind = KEYS.reduce((a, k) => a + vol[k].unwind, 0);
+  const poolCost = tradingCost(totalEntry, totalUnwind);
+  const weight = (k: VaultKey) => {
+    const w = (x: VaultKey) => bandRes[x].avgLtv * tvl(x);
+    const sum = w("eth") + w("btc");
+    return sum > 0 ? w(k) / sum : 0.5;
+  };
+
   let lpVolume = 0;
   let deskVolume = 0;
   const vaults = {} as Record<VaultKey, VaultResult>;
@@ -121,16 +154,22 @@ export function evaluate(p: Params): ClosedResult {
     const loopInterest = lbar * (L - 1) * rLoop;
     const mainInterest = lbar * rMain;
     const gross = primeYield - loopInterest - mainInterest;
-    const churn = L * (br.releverPerYear * cE + br.deleverPerYear * cU);
     const inflowFrac = t > 0 ? inflow(k) / t : 0;
-    const pooled = p.improvements.attribution === "pooled";
     let depositFeeRate = 0;
     if (p.depositFee.on) depositFeeRate = p.depositFee.auto ? cE * L * v.bandTarget : p.depositFee.bps / 1e4;
-    let flows = pooled ? L * v.bandTarget * (inflowFrac * cE + v.outflowRate * cU) : 0;
+    // pooled: everyone shares the whole loop's trading; own: a vault pays its own churn, newcomers and leavers their own trades
+    const ownChurnUsd = tradingCost(vol[k].churnEntry, vol[k].churnUnwind);
+    const pooledUsd = poolCost * weight(k);
+    const churnShare = poolCost > 0 ? tradingCost(KEYS.reduce((a, x) => a + vol[x].churnEntry, 0), KEYS.reduce((a, x) => a + vol[x].churnUnwind, 0)) / poolCost : 0;
+    const churnUsd = pooled ? pooledUsd * churnShare : ownChurnUsd;
+    let flowUsd = pooled ? pooledUsd * (1 - churnShare) : 0;
     // a deposit fee paid into the loop compensates incumbents for newcomers' entries
-    if (pooled && p.depositFee.on && p.depositFee.dest === "loop") flows = Math.max(0, flows - inflowFrac * depositFeeRate);
+    if (pooled && p.depositFee.on && p.depositFee.dest === "loop") flowUsd = Math.max(0, flowUsd - inflowFrac * t * depositFeeRate);
+    const churn = t > 0 ? churnUsd / t : 0;
+    const flows = t > 0 ? flowUsd / t : 0;
     const afterCosts = gross - churn - flows;
-    const feeBase = p.fees.feeBase === "gross" ? gross : afterCosts;
+    // contracts take the fee on the whole harvest, which still includes the slice that services vault interest
+    const feeBase = p.fees.feeBase === "gross" ? gross : p.fees.feeBase === "yield" ? afterCosts : afterCosts + mainInterest;
     const feeTaken = fee * Math.max(0, feeBase);
     const net = afterCosts - feeTaken;
     const entryOneOff = cE * L * v.bandTarget;
@@ -175,8 +214,8 @@ export function evaluate(p: Params): ClosedResult {
         churnCost: churn * t,
         flowCost: flows * t,
         primeYield: primeYield * t,
-        entryVolume: L * (br.releverPerYear * t + inflowFrac * t * v.bandTarget),
-        unwindVolume: L * (br.deleverPerYear * t + v.outflowRate * t * v.bandTarget),
+        entryVolume: vol[k].entry,
+        unwindVolume: vol[k].unwind,
       },
     };
     lpVolume += vaults[k].usd.entryVolume + vaults[k].usd.unwindVolume;

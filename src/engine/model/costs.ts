@@ -17,6 +17,8 @@ export interface CostBreakdown {
   /** what the model uses */
   entryBps: number;
   unwindBps: number;
+  /** a buy and a sell that meet in the pool, bps of one leg */
+  roundTripBps: number;
   /** arb's cost of its other leg per unit sold, bps (realistic mode) */
   arbOtherLegBps: number;
   stall: boolean;
@@ -81,6 +83,8 @@ export function costs(p: Params, primeDemandUsd: number): CostBreakdown {
     deskCoverage: coverage,
     entryBps: entry,
     unwindBps: unwind,
+    // fitted to the Monte Carlo: both legs' fees and impact, the solver, and part of the band
+    roundTripBps: coverage * (2 * (im.deskMode === "direct" ? im.deskSpreadBps : fee + impact) + solver) + (1 - coverage) * (2 * fee + 2 * impact + solver + 0.6 * band),
     arbOtherLegBps: otherLeg,
     stall: entry > p.loop.laneCapBps,
   };

@@ -66,6 +66,8 @@ describe("band churn vs the Monte Carlo of 20 Oct", () => {
     p.costs.mode = "manual";
     p.costs.entryBps = entry;
     p.costs.unwindBps = 8.5;
+    p.costs.churnModel = "constant";
+    p.improvements.attribution = "own";
     p.market.monitorMinutes = 15;
     Object.assign(p.vaults.btc, { bandLo: lo, bandTarget: t, bandHi: hi, vol });
     return evaluate(p).vaults.btc;

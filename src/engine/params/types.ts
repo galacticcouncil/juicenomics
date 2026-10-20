@@ -77,12 +77,13 @@ export interface Params {
     entryBps: number;
     unwindBps: number;
     harvestSwapBps: number;
+    churnModel: "pool" | "constant";
   };
   fees: {
     protocolFeeBps: number;
     discountMain: number;
     discountLoop: number;
-    feeBase: "afterCosts" | "gross";
+    feeBase: "contract" | "yield" | "gross";
   };
   depositFee: {
     on: boolean;
