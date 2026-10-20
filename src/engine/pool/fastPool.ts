@@ -64,17 +64,14 @@ export function quote(s: PoolState, side: 0 | 1, amountIn: number): number {
 
 export function apply(s: PoolState, side: 0 | 1, amountIn: number): number {
   const out = quote(s, side, amountIn);
-  const gross = out / (1 - s.fee);
+  // the fee stays in the pool for its LPs, so the reserve pays out exactly `out` (already in token units)
   if (side === 0) {
     s.prime += amountIn;
-    s.hollar -= gross;
+    s.hollar -= out;
   } else {
     s.hollar += amountIn;
-    s.prime -= gross / s.peg;
+    s.prime -= out;
   }
-  // the fee stays in the pool for its LPs
-  if (side === 0) s.hollar += gross - out;
-  else s.prime += (gross - out) / s.peg;
   return out;
 }
 

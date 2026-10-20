@@ -20,7 +20,8 @@ churn      N · L · [P_up·c·ℓ(1−e^−a) + P_down·u·ℓ(e^b−1)] = ${fm
 flows      L·ℓ·(inflow·c + outflow·u)  (pooled costs only) = ${fmtPct(v.flows)}
 fee        f · max(0, ${p.fees.feeBase === "gross" ? "gross" : p.fees.feeBase === "yield" ? "gross − costs" : "gross + vault interest − costs"})              = ${fmtPct(v.feeTaken)}
 net        gross − churn − flows − fee          = ${fmtPct(v.net)}
-break-even 365 · c · L / s                      = ${r.breakEven.entryDays.toFixed(0)} days`}</div>
+break-even 365 · (c·L·ℓ + deposit fee) / net  = ${Number.isFinite(v.breakEvenDays) ? `${v.breakEvenDays.toFixed(0)} days` : "never (net ≤ 0)"}
+deficit    365 · c · L / s, before fees        = ${Number.isFinite(r.breakEven.holeDays) ? `${r.breakEven.holeDays.toFixed(0)} days` : "never"}`}</div>
         <h3>Conventions</h3>
         <ul>
           <li>Entry cost c = arb threshold + 2 × pool fee + one tranche's impact + solver. With Lark's 15 bps arb this is 24.5 bps, as measured on Lark 4.</li>
@@ -44,7 +45,7 @@ break-even 365 · c · L / s                      = ${r.breakEven.entryDays.toFi
           <li>Path effects: arb inventory running dry, deposit stops, stalls, pool premium recapture between rebalances. Use the Simulation tab.</li>
           <li>Harvest and Main-interest servicing swaps are a flat cost per harvested dollar.</li>
           <li>Changes in the HOLLAR rate driven by utilisation.</li>
-          <li>The execution-cost allowance: once the entry hole is repaid the loop keeps about allowance × L (≈ 160 bps of principal on Lark 4) as unharvested surplus. It cushions later costs and is held in USD, so in the Monte Carlo it lifts collateral-unit APR when collateral falls and trims it when collateral rises.</li>
+          <li>The execution-cost allowance: once the entry hole is repaid the loop keeps about allowance × L (≈ 160 bps of principal on Lark 4) as unharvested surplus. It cushions later costs. In the Monte Carlo it adds about 0.3 pp of APR at a flat median price (deferred fee, leveraged carry); held in USD, it adds more when collateral falls and less when it rises.</li>
         </ul>
       </div>
     </div>

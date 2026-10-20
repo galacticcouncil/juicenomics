@@ -22,7 +22,8 @@ export const PRESETS: Preset[] = [
   { key: "disc50", label: "50% discount + 61% fee", note: "half the HOLLAR interest moves into the collateral fee", apply: (p) => { p.fees.discountMain = 0.5; p.fees.discountLoop = 0.5; p.fees.protocolFeeBps = 6100; } },
   { key: "disc100", label: "Full discount + 75.5% fee", note: "protocol revenue entirely in the collateral", apply: (p) => { p.fees.discountMain = 1; p.fees.discountLoop = 1; p.fees.protocolFeeBps = 7550; } },
   { key: "incentive", label: "+1% PRIME APY (targeted)", note: "extra supply APY on Juicer's aPRIME", apply: (p) => { p.improvements.incentiveBps = 100; } },
-  { key: "own", label: "Own-cost + entry fee", note: "deposits pay their own entry, exits their own unwind", apply: (p) => { p.improvements.attribution = "own"; p.depositFee.on = true; p.depositFee.auto = true; } },
+  { key: "own", label: "Own-cost attribution", note: "deposits pay their own entry, exits their own unwind (contract change)", apply: (p) => { p.improvements.attribution = "own"; } },
+  { key: "entryFee", label: "Pooled + auto entry fee", note: "newcomers pay ~c·L·ℓ into the loop, compensating incumbents for their entry (no contract change to the loop)", apply: (p) => { p.depositFee.on = true; p.depositFee.auto = true; } },
   { key: "lev3", label: "3× leverage", note: "half the leverage", apply: (p) => { p.loop.mode = "lev"; p.loop.leverage = 3; } },
   { key: "mainnet", label: "Mainnet launch", note: "12 h cooldown, caps off, 10× TVL growth, 30%/yr withdrawals", apply: (p) => {
     p.policy.cooldownHours = 12; p.flows.growth = "exp"; p.flows.growthFactor = 10;

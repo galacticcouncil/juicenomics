@@ -133,14 +133,15 @@ function FindBest({ p, onApply, cons, setCons }: { p: Params; onApply: (p: Param
   const [metric, setMetric] = useState("worst");
   const [onlyAdmin, setOnlyAdmin] = useState(false);
   const [chosen, setChosen] = useState<string[]>(["leverage", "bands.relever", "bands.target", "pool.feeBps", "fees.protocolFeeBps", "fees.discountMain", "fees.discountLoop", "improvements.desk"]);
-  const [res, setRes] = useState<{ best: Candidate[]; front: Candidate[]; all: Candidate[] } | null>(null);
+  // a result keeps the settings it searched, so changing the checkboxes afterwards can't misread it
+  const [res, setRes] = useState<{ best: Candidate[]; front: Candidate[]; all: Candidate[]; knobs: typeof KNOBS } | null>(null);
   const [busy, setBusy] = useState(false);
   const knobs = KNOBS.filter((k) => chosen.includes(k.key) && (!onlyAdmin || k.lever === "admin" || k.lever === "ops"));
   const run = () => {
     setBusy(true);
     setTimeout(() => {
       const out = search(p, knobs, METRIC.get(metric)!, cons, 1500);
-      setRes({ best: out.best, all: out.all, front: pareto(out.all) });
+      setRes({ best: out.best, all: out.all, front: pareto(out.all), knobs });
       setBusy(false);
     }, 20);
   };
@@ -180,12 +181,12 @@ function FindBest({ p, onApply, cons, setCons }: { p: Params; onApply: (p: Param
         <>
           <h3>Best found</h3>
           <table className="grid">
-            <thead><tr><th>#</th>{knobs.map((k) => <th key={k.key} className="num">{k.label}</th>)}<th className="num">jETH</th><th className="num">jBTC</th><th className="num">break-even</th><th className="num">protocol / yr</th><th /></tr></thead>
+            <thead><tr><th>#</th>{res.knobs.map((k) => <th key={k.key} className="num">{k.label}</th>)}<th className="num">jETH</th><th className="num">jBTC</th><th className="num">break-even</th><th className="num">protocol / yr</th><th /></tr></thead>
             <tbody>
               {res.best.map((c, i) => (
                 <tr key={i}>
                   <td>{i + 1}</td>
-                  {knobs.map((k) => <td key={k.key} className="num">{fmtKnob(k)(c.values[k.key])}</td>)}
+                  {res.knobs.map((k) => <td key={k.key} className="num">{fmtKnob(k)(c.values[k.key])}</td>)}
                   <td className="num">{fmtPct(c.result.vaults.eth.net)}</td>
                   <td className="num">{fmtPct(c.result.vaults.btc.net)}</td>
                   <td className="num">{fmtDays(c.result.breakEven.entryDays)}</td>
@@ -193,7 +194,7 @@ function FindBest({ p, onApply, cons, setCons }: { p: Params; onApply: (p: Param
                   <td><button onClick={() => onApply(c.params)}>apply</button></td>
                 </tr>
               ))}
-              {!res.best.length && <tr><td colSpan={knobs.length + 6} className="muted">no feasible scenario under these constraints</td></tr>}
+              {!res.best.length && <tr><td colSpan={res.knobs.length + 6} className="muted">no feasible scenario under these constraints</td></tr>}
             </tbody>
           </table>
           <h3>Depositors vs protocol trade-off</h3>

@@ -74,7 +74,7 @@ export function Overview({ p, r, issues, onApply }: { p: Params; r: ClosedResult
       <div className="tiles">
         <Tile label="jETH net APR" value={fmtPct(r.vaults.eth.net)} sub={`APY ${fmtPct(r.vaults.eth.netApy)}${r.vaults.eth.inKind ? ` · ${fmtPct(r.vaults.eth.netWithInKind)} with GIGAETH yield` : ""}`} />
         <Tile label="jBTC net APR" value={fmtPct(r.vaults.btc.net)} sub={`APY ${fmtPct(r.vaults.btc.netApy)} · first year ${fmtPct(r.vaults.btc.year1)}`} />
-        <Tile label="Break-even" value={fmtDays(r.breakEven.entryDays)} sub={`entry · round trip ${fmtDays(r.breakEven.roundTripDays)}`} title="days of carry to earn back the entry cost (and the exit)" />
+        <Tile label="Break-even" value={fmtDays(r.breakEven.entryDays)} sub={`entry · round trip ${fmtDays(r.breakEven.roundTripDays)} · deficit repaid in ${fmtDays(r.breakEven.holeDays)}`} title="days of a depositor's net carry (after fees and costs) to earn back its own entry (and exit), slower vault; the deficit repays sooner because nothing is harvested or fee'd until it's gone" />
         <Tile label="Leverage" value={fmtX(r.lev.L)} sub={`HF ${r.lev.hfEff.toFixed(3)} · liquidated by a ${fmtPct(r.lev.liqDrop, 1)} PRIME drop`} />
         <Tile label="Entry · unwind cost" value={`${r.costs.entryBps.toFixed(1)} · ${r.costs.unwindBps.toFixed(1)}`} sub={`bps vs oracle${r.costs.stall ? " · STALLS at the lane cap" : ""}${r.costs.deskCoverage ? ` · desk covers ${fmtPct(r.costs.deskCoverage, 0)}` : ""}`} />
         <Tile label="Deficit when ramped" value={fmtBps(r.deficit.structuralBps, 0)} sub={`gate ${r.deficit.stopsAt} bps · deposits close past ${fmtX(r.deficit.closeAtLeverage, 1)}`} />

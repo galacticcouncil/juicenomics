@@ -130,7 +130,7 @@ export const PARAMS: ParamDef[] = [
   n({ path: "flows.sizeMedianUsd", code: "fs", group: "flows", label: "Typical deposit", unit: "usd", min: 10, max: 10_000_000, step: 10, log: true, lever: "market", scope: "mc", help: "median deposit size" }),
   // sim
   n({ path: "sim.horizonDays", code: "sh", group: "sim", label: "Horizon", unit: "days", min: 7, max: 1095, step: 1, lever: "model", scope: "both", help: "simulated period" }),
-  n({ path: "sim.stepHours", code: "ss", group: "sim", label: "Time step", unit: "hours", min: 0.25, max: 24, step: 0.25, lever: "model", scope: "mc", help: "Monte Carlo step" }),
+  n({ path: "sim.stepHours", code: "ss", group: "sim", label: "Time step", unit: "hours", min: 0.25, max: 24, step: 0.25, lever: "model", scope: "mc", help: "Monte Carlo step; snapped to a whole fraction of a day (24 h / n)" }),
   n({ path: "sim.paths", code: "sp", group: "sim", label: "Paths", unit: "num", min: 1, max: 2000, step: 1, log: true, lever: "model", scope: "mc", help: "Monte Carlo paths" }),
   n({ path: "sim.seed", code: "sd", group: "sim", label: "Seed", unit: "num", min: 1, max: 1_000_000, step: 1, lever: "model", scope: "mc", help: "random seed (results reproduce)" }),
   e({ path: "sim.poolMode", code: "sP", group: "sim", label: "Pool math", options: [{ value: "fast", label: "fast float mirror" }, { value: "exact", label: "exact wasm" }], lever: "model", scope: "mc", help: "exact uses Hydration's stableswap wasm (slower)" }),

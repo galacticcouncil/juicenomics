@@ -2,8 +2,10 @@ import type { Params, VaultKey } from "../params/types";
 import { bands, type BandResult } from "./bands";
 import { costs, type CostBreakdown } from "./costs";
 
-/** how much of the pool-aware churn saving survives as rebalances grow against pool 143 */
-export const NETTING = { floor: 0.2, base: 1.2, div: 24 };
+/** how much of the pool-aware churn saving survives as rebalances grow against pool 143; below 0 once they
+ * outgrow the pool and the arb's inventory and cost more than a tranche at the arb's band (fitted 20 Oct to the
+ * Monte Carlo at 1-50× Lark 4's TVL, wide bands and a 2 bps pool fee: rmse 0.10 pp) */
+export const NETTING = { floor: -0.3, base: 1.5, div: 32 };
 
 export interface Leverage {
   L: number;
@@ -55,6 +57,9 @@ export interface VaultResult {
   exitOneOff: number;
   depositFee: number;
   year1: number;
+  /** days of the depositor's net carry to earn back its own entry (and exit) */
+  breakEvenDays: number;
+  roundTripDays: number;
   firstCohortGrowthCost: number;
   /** structural deficit of a fully deployed vault, bps of its HOLLAR principal */
   deficitBps: number;
@@ -69,7 +74,8 @@ export interface ClosedResult {
   scale: { eventUsd: number; depthUsd: number; netting: number };
   costs: CostBreakdown;
   vaults: Record<VaultKey, VaultResult>;
-  breakEven: { entryDays: number; roundTripDays: number };
+  /** depositor break-even of the slower vault; holeDays: the vault deficit repaid from pre-fee carry */
+  breakEven: { entryDays: number; roundTripDays: number; holeDays: number };
   deficit: { structuralBps: number; admissionHeadroomBps: number; depositsClose: boolean; closeAtLeverage: number; stopsAt: number };
   lark4Now: { holeUsd: number; holeBps: number; holeMarketUsd: number };
   protocol: { hollarInterest: number; collateralFee: number; lpFees: number; depositFees: number; deskSpread: number; incentiveCost: number; total: number; inCollateralShare: number };
@@ -132,7 +138,6 @@ export function evaluate(p: Params): ClosedResult {
   // buys and sells that meet in pool 143 only pay the round trip; the excess pays the arb's band
   const rt = c.roundTripBps / 1e4;
   // netting works while one rebalance is small against pool 143; big ones push past the arb's band
-  // (fitted to the Monte Carlo at 1-50x Lark 4's TVL)
   const depthUsd = p.pool.prime * p.market.primePrice + p.pool.hollar;
   const eventUsd = KEYS.reduce((a, k) => {
     const br = bandRes[k];
@@ -160,7 +165,6 @@ export function evaluate(p: Params): ClosedResult {
     return sum > 0 ? w(k) / sum : 0.5;
   };
 
-  let lpVolume = 0;
   let deskVolume = 0;
   const vaults = {} as Record<VaultKey, VaultResult>;
   for (const k of KEYS) {
@@ -181,8 +185,8 @@ export function evaluate(p: Params): ClosedResult {
     const churnShare = poolCost > 0 ? tradingCost(KEYS.reduce((a, x) => a + vol[x].churnEntry, 0), KEYS.reduce((a, x) => a + vol[x].churnUnwind, 0)) / poolCost : 0;
     const churnUsd = pooled ? pooledUsd * churnShare : ownChurnUsd;
     let flowUsd = pooled ? pooledUsd * (1 - churnShare) : 0;
-    // a deposit fee paid into the loop compensates incumbents for newcomers' entries
-    if (pooled && p.depositFee.on && p.depositFee.dest === "loop") flowUsd = Math.max(0, flowUsd - inflowFrac * t * depositFeeRate);
+    // a deposit fee paid into the loop goes to everyone already in it; past newcomers' costs it's a gain
+    if (p.depositFee.on && p.depositFee.dest === "loop") flowUsd -= inflowFrac * t * depositFeeRate;
     const churn = t > 0 ? churnUsd / t : 0;
     const flows = t > 0 ? flowUsd / t : 0;
     const afterCosts = gross - churn - flows;
@@ -214,6 +218,8 @@ export function evaluate(p: Params): ClosedResult {
       exitOneOff,
       depositFee: depositFeeRate,
       year1: net - entryOneOff - exitOneOff - depositFeeRate,
+      breakEvenDays: net > 0 ? (365 * (entryOneOff + depositFeeRate)) / net : Infinity,
+      roundTripDays: net > 0 ? (365 * (entryOneOff + exitOneOff + depositFeeRate)) / net : Infinity,
       firstCohortGrowthCost: pooled ? entryOneOff * Math.log(Math.max(1, growth)) : 0,
       deficitBps: cE * L * 1e4,
       waterfall: [
@@ -236,12 +242,13 @@ export function evaluate(p: Params): ClosedResult {
         unwindVolume: vol[k].unwind,
       },
     };
-    lpVolume += vaults[k].usd.entryVolume + vaults[k].usd.unwindVolume;
     deskVolume += c.deskCoverage * (vaults[k].usd.entryVolume + (p.improvements.deskBid ? vaults[k].usd.unwindVolume : 0));
   }
 
-  const entryDays = spread > 0 ? (365 * cE * L) / spread : Infinity;
-  const roundTripDays = spread > 0 ? (365 * (cE + cU) * L) / spread : Infinity;
+  // nothing is harvested (or fee'd) until the hole is repaid, so it closes on the vault's pre-fee carry
+  const holeDays = spread > 0 ? (365 * cE * L) / spread : Infinity;
+  const entryDays = Math.max(...KEYS.map((k) => vaults[k].breakEvenDays));
+  const roundTripDays = Math.max(...KEYS.map((k) => vaults[k].roundTripDays));
   const structuralBps = cE * L * 1e4;
   const gate = Math.min(p.policy.admissionBps, p.policy.stopBps);
   if (structuralBps > gate) issues.push(`a fully ramped loop runs ~${structuralBps.toFixed(0)} bps short, past the ${gate} bps deposit gate`);
@@ -249,10 +256,15 @@ export function evaluate(p: Params): ClosedResult {
   const tvlTotal = KEYS.reduce((a, k) => a + vaults[k].tvlUsd, 0);
   const hollarInterest = KEYS.reduce((a, k) => a + vaults[k].usd.hollarInterest, 0);
   const collateralFee = KEYS.reduce((a, k) => a + vaults[k].usd.collateralFee, 0);
-  // both the loop's trade and the arb's (or desk's) answering trade pay the pool fee
+  // only trades that cross pool 143 pay its fee: direct desk fills don't. an unmatched trade pays twice
+  // (the loop's and the arb's or desk's answer), matched buys and sells once each
   const feeRate = p.pool.feeBps / 1e4;
-  const arbVolume = (1 - c.deskCoverage) * KEYS.reduce((a, k) => a + vaults[k].usd.entryVolume, 0);
-  const lpFees = feeRate * (2 * lpVolume);
+  const direct = p.improvements.desk && p.improvements.deskMode === "direct";
+  const poolEntry = (direct ? 1 - c.deskCoverage : 1) * totalEntry;
+  const poolUnwind = (direct && p.improvements.deskBid ? 1 - c.deskCoverage : 1) * totalUnwind;
+  const matched = p.costs.churnModel === "constant" ? 0 : netting * Math.min(poolEntry, poolUnwind);
+  const arbVolume = (direct ? 1 : 1 - c.deskCoverage) * Math.max(0, poolEntry - matched);
+  const lpFees = feeRate * (2 * (poolEntry + poolUnwind) - 2 * matched);
   const depositFees = p.depositFee.on && p.depositFee.dest === "protocol"
     ? KEYS.reduce((a, k) => a + vaults[k].depositFee * inflow(k), 0)
     : 0;
@@ -275,7 +287,7 @@ export function evaluate(p: Params): ClosedResult {
     scale: { eventUsd, depthUsd, netting },
     costs: c,
     vaults,
-    breakEven: { entryDays, roundTripDays },
+    breakEven: { entryDays, roundTripDays, holeDays },
     deficit: {
       structuralBps,
       admissionHeadroomBps: p.policy.admissionBps - structuralBps,

@@ -29,18 +29,18 @@ describe("closed form vs the 20 Oct loop-cost study", () => {
     expect(r.vaults.btc.net).toBeCloseTo(0.069, 3);
   });
 
-  it("entry break-even is ~55 days at a 1.63% spread and doesn't depend on leverage", () => {
+  it("the hole is repaid in ~55 days at a 1.63% spread, whatever the leverage", () => {
     for (const L of [2, 3, 6.05]) {
       const r = evaluate(study((p) => { p.loop.leverage = L; p.market.primeYield = 0.0603; p.costs.mode = "manual"; p.costs.entryBps = 24.5; }));
-      expect(r.breakEven.entryDays).toBeGreaterThan(53);
-      expect(r.breakEven.entryDays).toBeLessThan(57);
+      expect(r.breakEven.holeDays).toBeGreaterThan(53);
+      expect(r.breakEven.holeDays).toBeLessThan(57);
     }
   });
 
-  it("+1% supply APY takes the entry break-even to ~34 days", () => {
+  it("+1% supply APY repays the hole in ~34 days", () => {
     const r = evaluate(study((p) => { p.market.primeYield = 0.0603; p.improvements.incentiveBps = 100; p.costs.mode = "manual"; p.costs.entryBps = 24.5; }));
-    expect(r.breakEven.entryDays).toBeGreaterThan(32);
-    expect(r.breakEven.entryDays).toBeLessThan(36);
+    expect(r.breakEven.holeDays).toBeGreaterThan(32);
+    expect(r.breakEven.holeDays).toBeLessThan(36);
   });
 
   it("discount table: protocol HOLLAR interest 20.9% / 10.4% / 0 of collateral", () => {

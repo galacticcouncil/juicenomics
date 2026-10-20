@@ -83,6 +83,11 @@ interface Vault {
   pendingExit: number;
   cohorts: Cohort[];
   nav0: number;
+  // newcomers' share of the reinvest credit and of the current ramp, for own-cost attribution
+  newcomer: { c: Cohort; usd: number }[];
+  ramp: { c: Cohort | null; amount: number }[];
+  // execution costs borne since the last harvest, for a fee on gross yield
+  costAcc: number;
 }
 
 interface Request {
@@ -105,12 +110,15 @@ interface Exit {
 }
 
 const KEYS: VaultKey[] = ["eth", "btc"];
+const MAX_OBS = 120;
 
 export function runPath(p: Params, index: number, math?: StableswapWasm): PathResult {
   const r = rng(p.sim.seed, index);
-  const stepH = p.sim.stepHours;
+  const rObs = rng(p.sim.seed ^ 0x5bd1e995, index);
+  // a day holds a whole number of steps, so elapsed time matches the horizon
+  const stepsPerDay = Math.max(1, Math.round(24 / p.sim.stepHours));
+  const stepH = 24 / stepsPerDay;
   const dt = stepH / 8760;
-  const stepsPerDay = Math.max(1, Math.round(24 / stepH));
   const days = Math.max(1, Math.round(p.sim.horizonDays));
   const steps = days * stepsPerDay;
   const lev = leverage(p);
@@ -131,6 +139,8 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
   const desk = p.improvements;
   const attribution = desk.attribution;
   const paths = makePaths(p, r, steps, dt);
+  const rho = Math.max(-1, Math.min(1, p.market.corr));
+  const monitorH = Math.max(1 / 60, p.market.monitorMinutes / 60);
   const ledger = {
     hollarInterest: 0, collateralFee: 0, lpFees: 0, depositFees: 0, deskPnl: 0, incentiveCost: 0,
     entryCost: 0, unwindCost: 0, harvestCost: 0, solver: 0, arbGross: 0, arbOtherLeg: 0,
@@ -162,6 +172,7 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
     vaults[k] = {
       key: k, Q: v.units, D: 0, mainPrincipal: 0, P: v.price, supply: v.units, loopShares: 0, principal: 0, credit: 0, rampWeight: 0,
       stop: false, pendingExit: 0, cohorts: [{ vault: k, day: 0, usd: v.units * v.price, units: v.units, shares: v.units, exitedUnits: 0, exitedShares: 0 }], nav0: 1,
+      newcomer: [], ramp: [], costAcc: 0,
     };
   }
   if (p.sim.initial === "lark4") {
@@ -179,9 +190,19 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
   }
 
   const eps = () => (totalShares > 0 ? (A * oracle - B + cash - owed) / totalShares : 1);
-  const vaultEquity = (v: Vault) => v.loopShares * eps() + requests.filter((q) => q.vault === v.key && q.kind === "delever").reduce((a, q) => a + q.owed - q.freed, 0);
+  const vaultEquity = (v: Vault) => v.loopShares * eps() + requests.filter((q) => q.vault === v.key && q.kind === "delever").reduce((a, q) => a + q.owed - q.freed - q.charged, 0);
   const vaultDeficitBps = (v: Vault) => (v.D > 0 ? ((v.D - vaultEquity(v)) / v.D) * 1e4 : 0);
   const navUnits = (v: Vault) => (v.supply > 0 ? (v.Q - (v.D - vaultEquity(v)) / v.P) / v.supply : 1);
+  // a newcomer's own cost comes out of its own vault shares, so the vault's other holders keep their nav:
+  // burn x with (V − usd)/(S − x) = V/S, the loss already in V
+  const chargeCohort = (v: Vault, c: Cohort, usd: number) => {
+    if (usd <= 0 || v.supply <= 0) return;
+    const navUsd = navUnits(v) * v.P;
+    const x = Math.min(c.shares - c.exitedShares, (usd * v.supply) / Math.max(1e-12, navUsd * v.supply + usd));
+    if (x <= 0) return;
+    c.shares -= x;
+    v.supply -= x;
+  };
   for (const k of KEYS) {
     vaults[k].nav0 = navUnits(vaults[k]);
     vaults[k].cohorts[0].units = vaults[k].cohorts[0].shares * vaults[k].nav0;
@@ -294,7 +315,7 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
     return pool.quote(1, usd);
   };
 
-  const loopDeposit = (v: Vault, amount: number) => {
+  const loopDeposit = (v: Vault, amount: number, c: Cohort | null = null) => {
     if (amount <= 0) return;
     const e = eps();
     const net = attribution === "swing" ? amount * (1 - (closed.entryBps / 1e4) * Lt) : amount;
@@ -303,7 +324,9 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
     totalShares += shares;
     v.principal += amount;
     v.rampWeight += amount;
+    v.ramp.push({ c, amount });
     cash += amount;
+    if (c && amount > net) chargeCohort(v, c, amount - net);
   };
   const requestUnwind = (v: Vault, equity: number, kind: Request["kind"], extra?: Partial<Request>) => {
     const e = eps();
@@ -331,13 +354,29 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
     q.freed += amount;
     if (q.kind === "delever") repayMain(v, amount);
   };
-  const finishExit = (q: Request) => {
+  const finishExit = (q: Request, feeCut = 0) => {
     const v = vaults[q.vault];
     // freed loop equity repays the exit's Main slice; a shortfall comes out of its collateral
-    const valueUsd = q.collateralOwed * v.P + (q.freed - q.debtShare);
+    const valueUsd = q.collateralOwed * v.P + (q.freed - q.debtShare) - feeCut;
     ledger.withdrawnUsd += valueUsd;
     const total = q.cohortShares.reduce((a, x) => a + x.shares, 0) || 1;
     for (const x of q.cohortShares) x.c.exitedUnits += (valueUsd * x.shares) / total / v.P;
+  };
+  // the protocol fee on an unwound slice's own yield is paid when its claim closes
+  const closeRequest = (q: Request) => {
+    const v = vaults[q.vault];
+    const feeCut = fee * Math.max(0, q.allowance - q.charged);
+    ledger.collateralFee += feeCut;
+    if (q.kind === "exit") finishExit(q, feeCut);
+    else {
+      v.D += feeCut;
+      v.mainPrincipal += feeCut;
+    }
+  };
+  // a cost every loop share bears, split by holding
+  const shareCost = (usd: number) => {
+    if (usd <= 0 || totalShares <= 0) return;
+    for (const k of KEYS) vaults[k].costAcc += (usd * vaults[k].loopShares) / totalShares;
   };
 
   const series = new Float32Array(days * SERIES.length);
@@ -352,6 +391,7 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
     const t = i * stepH;
     const day = i / stepsPerDay;
     // 1. prices
+    const P0 = { eth: vaults.eth.P, btc: vaults.btc.P };
     const sf = stressFactor(p, day) / stressFactor(p, Math.max(0, day - 1 / stepsPerDay));
     vaults.eth.P *= Math.exp(paths.eth[i]) * sf;
     vaults.btc.P *= Math.exp(paths.btc[i]) * sf;
@@ -425,10 +465,15 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
             last.units += room / v.P;
             last.shares += shares;
           } else v.cohorts.push({ vault: k, day: d, usd: room, units: room / v.P, shares, exitedUnits: 0, exitedShares: 0 });
+          v.newcomer.push({ c: v.cohorts[v.cohorts.length - 1], usd: net });
         }
       }
-      // withdrawals: a steady share of every cohort asks to leave, after the cooldown
-      const rate = p.vaults[k].outflowRate * dt;
+      // withdrawals: requests arrive like deposits, pro rata across cohorts, and pay out after the cooldown
+      const freeUsd = navUnits(v) * v.P * Math.max(0, v.supply - v.pendingExit);
+      const asks = p.vaults[k].outflowRate > 0 && freeUsd > 0 ? poisson(r, (p.vaults[k].outflowRate * freeUsd * dt) / meanSize) : 0;
+      let askUsd = 0;
+      for (let j = 0; j < asks; j++) askUsd += p.flows.sizeMedianUsd * Math.exp(p.flows.sizeSigma * r.normal());
+      const rate = freeUsd > 0 ? Math.min(1, askUsd / freeUsd) : 0;
       if (rate > 0) {
         const cs = v.cohorts.map((c) => ({ c, shares: (c.shares - c.exitedShares) * rate })).filter((x) => x.shares > 0);
         const shares = cs.reduce((a, x) => a + x.shares, 0);
@@ -474,10 +519,15 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
           totalShares -= surplus / e;
           harvested += surplus;
           const swap = surplus * (p.costs.harvestSwapBps / 1e4);
-          const protocolCut = (surplus - swap) * fee;
+          const due = Math.max(0, v.D - v.mainPrincipal);
+          // contracts: the whole harvest; yield: after the vault's interest; gross: before trading costs too
+          const base = p.fees.feeBase === "contract" ? surplus - swap
+            : p.fees.feeBase === "yield" ? surplus - swap - due
+            : surplus - swap - due + v.costAcc;
+          const protocolCut = Math.min(surplus - swap, Math.max(0, base)) * fee;
+          v.costAcc = 0;
           let net = surplus - swap - protocolCut;
           // Main interest is serviced from the harvest before anything compounds
-          const due = Math.max(0, v.D - v.mainPrincipal);
           const service = Math.min(due, net);
           if (service > 0) {
             const serviceSwap = service * (p.costs.harvestSwapBps / 1e4);
@@ -495,27 +545,72 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
       if (harvested > 0) A -= harvested / oracle;
     }
 
-    // 5. vault rebalancing
+    // 5. vault rebalancing: reinvest credit, then resize at each keeper observation in this step.
+    // observations between steps see a brownian bridge from the step's start price to its end price
+    const obs: number[] = [];
+    {
+      const first = Math.floor(t / monitorH + 1e-9) + 1;
+      const last = Math.floor((t + stepH) / monitorH + 1e-9);
+      const m = last - first + 1;
+      const every = Math.max(1, Math.ceil(m / MAX_OBS));
+      for (let j = last; j >= first; j -= every) obs.unshift(Math.min(1, (j * monitorH - t) / stepH));
+    }
+    const seen: Record<VaultKey, number[]> = { eth: [], btc: [] };
+    if (obs.length) {
+      const T = stepH / 8760;
+      const x = { eth: Math.log(P0.eth), btc: Math.log(P0.btc) };
+      const end = { eth: Math.log(vaults.eth.P), btc: Math.log(vaults.btc.P) };
+      let prev = 0;
+      for (const f of obs) {
+        if (f >= 1 - 1e-9) {
+          for (const k of KEYS) seen[k].push(vaults[k].P);
+          continue;
+        }
+        const z1 = rObs.normal();
+        const z2 = rho * z1 + Math.sqrt(1 - rho * rho) * rObs.normal();
+        for (const [j, k] of KEYS.entries()) {
+          const mean = x[k] + (end[k] - x[k]) * ((f - prev) / (1 - prev));
+          const sd = p.vaults[k].vol * Math.sqrt((T * (f - prev) * (1 - f)) / (1 - prev));
+          x[k] = mean + sd * (j ? z2 : z1);
+          seen[k].push(Math.exp(x[k]));
+        }
+        prev = f;
+      }
+    }
     for (const k of KEYS) {
       const v = vaults[k];
       const pv = p.vaults[k];
-      const value = v.Q * v.P;
+      // a committed de-lever settles before anything else (CollateralVault.rebalance)
+      if (requests.some((q) => q.vault === k && q.kind === "delever")) continue;
       if (v.credit > 0) {
+        const value = v.Q * v.P;
         const add = Math.max(0, Math.min(v.credit * pv.bandTarget, pv.bandTarget * value - v.D));
         borrowMain(v, add);
-        loopDeposit(v, add);
+        let rest = add;
+        for (const n of v.newcomer) {
+          const part = add * Math.min(1, n.usd / v.credit);
+          loopDeposit(v, part, n.c);
+          rest -= part;
+        }
+        loopDeposit(v, Math.max(0, rest));
         v.credit = 0;
+        v.newcomer = [];
       }
+      // waiting or unsettled exits pause price resizing
       if (v.pendingExit > 0 || requests.some((q) => q.vault === k)) continue;
-      const ltv = value > 0 ? v.D / value : 0;
-      if (ltv < pv.bandLo) {
-        const add = pv.bandTarget * value - v.D;
-        borrowMain(v, add);
-        loopDeposit(v, add);
-        counts.relevers[k]++;
-      } else if (ltv > pv.bandHi) {
-        requestUnwind(v, Math.min(v.D - pv.bandTarget * value, vaultEquity(v)), "delever");
-        counts.delevers[k]++;
+      for (const price of seen[k]) {
+        const value = v.Q * price;
+        const ltv = value > 0 ? v.D / value : 0;
+        if (ltv < pv.bandLo) {
+          const add = pv.bandTarget * value - v.D;
+          borrowMain(v, add);
+          loopDeposit(v, add);
+          counts.relevers[k]++;
+        } else if (ltv > pv.bandHi) {
+          requestUnwind(v, Math.min(v.D - pv.bandTarget * value, vaultEquity(v)), "delever");
+          counts.delevers[k]++;
+          break;
+        }
       }
     }
 
@@ -535,7 +630,7 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
       if (need <= 0.005) {
         owed -= Math.max(0, need);
         requests.shift();
-        if (q.kind === "exit") finishExit(q);
+        closeRequest(q);
         continue;
       }
       const position = A * oracle - B;
@@ -559,6 +654,8 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
       const freed = h - repay;
       // who bears the execution cost
       const chargeable = cost <= 0 ? 0 : attribution === "pooled" ? Math.max(0, Math.min(cost, q.allowance - q.charged)) : cost;
+      shareCost(cost - chargeable);
+      if (q.kind === "delever") vaults[q.vault].costAcc += chargeable;
       q.charged += chargeable;
       owed -= chargeable;
       const pay = Math.min(freed, q.owed - q.freed - q.charged);
@@ -592,22 +689,27 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
       ledger.entryCost += cost;
       ledger.entryVolume += T;
       ledger.solver += (got / (1 - solver)) * solver * oracle;
-      if (attribution === "own") {
-        const w = KEYS.reduce((a, k) => a + vaults[k].rampWeight, 0);
-        if (w > 0) {
-          const e = (A * oracle - B + cash - owed + cost) / Math.max(1e-9, totalShares);
-          for (const k of KEYS) {
-            const share = (cost * vaults[k].rampWeight) / w;
-            const burn = Math.min(vaults[k].loopShares, share / e);
-            vaults[k].loopShares -= burn;
-            totalShares -= burn;
-          }
+      const w = KEYS.reduce((a, k) => a + vaults[k].rampWeight, 0);
+      if (attribution === "own" && w > 0) {
+        const e = (A * oracle - B + cash - owed + cost) / Math.max(1e-9, totalShares);
+        for (const k of KEYS) {
+          const v = vaults[k];
+          const share = (cost * v.rampWeight) / w;
+          const burn = Math.min(v.loopShares, share / e);
+          v.loopShares -= burn;
+          totalShares -= burn;
+          v.costAcc += share;
+          // within the vault, a newcomer's slice of the ramp is its own cost
+          for (const part of v.ramp) if (part.c && v.rampWeight > 0) chargeCohort(v, part.c, (share * part.amount) / v.rampWeight);
         }
-      }
+      } else shareCost(cost);
       respond(t);
     }
     if (stalled) counts.stallSteps++;
-    if (A * oracle - B + cash > 0 && Lt * (A * oracle - B + cash) - A * oracle < p.loop.tranche) for (const k of KEYS) vaults[k].rampWeight = 0;
+    if (A * oracle - B + cash > 0 && Lt * (A * oracle - B + cash) - A * oracle < p.loop.tranche) for (const k of KEYS) {
+      vaults[k].rampWeight = 0;
+      vaults[k].ramp = [];
+    }
     // safety: restore the target HF after a PRIME drop
     if (hf() < hfT - 0.02 && A > 0) {
       const target = (B - (A * oracle * LT) / hfT) / (1 - LT / hfT);
@@ -618,6 +720,7 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
         A -= s;
         B = Math.max(0, B - h);
         ledger.unwindCost += s * oracle - h;
+        shareCost(s * oracle - h);
       }
     }
     respond(t);
@@ -675,10 +778,20 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
   const cohorts = KEYS.flatMap((k) => {
     const v = vaults[k];
     const nav = navUnits(v);
+    // claims not yet paid: shares still in their cooldown at nav, unwinds in flight at what they're owed
+    const pending = new Map<Cohort, number>();
+    const add = (c: Cohort, units: number) => pending.set(c, (pending.get(c) ?? 0) + units);
+    for (const x of exits) if (x.vault === k) for (const cs of x.cohortShares) add(cs.c, cs.shares * nav);
+    for (const q of requests) {
+      if (q.vault !== k || q.kind !== "exit") continue;
+      const usd = q.collateralOwed * v.P + (q.owed - q.charged) - q.debtShare - fee * Math.max(0, q.allowance - q.charged);
+      const total = q.cohortShares.reduce((a, cs) => a + cs.shares, 0) || 1;
+      for (const cs of q.cohortShares) add(cs.c, (usd * cs.shares) / total / v.P);
+    }
     return v.cohorts.filter((c) => c.usd > 0).map((c) => {
       const held = Math.max(1, days - c.day);
-      // collateral units at the end (held + paid out) vs units brought in
-      const endUnits = (c.shares - c.exitedShares) * nav + c.exitedUnits;
+      // collateral units at the end (held + owed + paid out) vs units brought in
+      const endUnits = (c.shares - c.exitedShares) * nav + c.exitedUnits + (pending.get(c) ?? 0);
       return { vault: k, day: c.day, usd: c.usd, heldDays: held, apr: c.units > 0 ? Math.log(Math.max(1e-9, endUnits / c.units)) / (held / 365) : 0 };
     });
   });

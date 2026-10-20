@@ -129,3 +129,46 @@ describe("harvest", () => {
     expect(stop(10)).toBeGreaterThan(stop(150));
   });
 });
+
+describe("withdrawals", () => {
+  const quiet = () => {
+    const p = clone(LARK4);
+    p.sim.initial = "fresh";
+    p.sim.horizonDays = 30;
+    p.loop.mode = "lev";
+    p.loop.leverage = 1;
+    p.loop.solverBps = 0;
+    p.market.primeYield = 0;
+    p.market.hollarRate = 0;
+    p.fees.protocolFeeBps = 0;
+    p.improvements.desk = true;
+    p.improvements.deskMode = "direct";
+    p.flows.sizeMedianUsd = 2000;
+    p.flows.sizeSigma = 0;
+    for (const k of ["eth", "btc"] as const) { p.vaults[k].vol = 0; p.vaults[k].outflowRate = 20; }
+    return p;
+  };
+  it("shares waiting out their cooldown keep their value", () => {
+    const p = quiet();
+    p.policy.cooldownHours = 720;
+    const r = runPath(p, 0).summary;
+    expect(r.withdrawnUsd).toBe(0);
+    expect(r.cohorts.length).toBeGreaterThan(1);
+    for (const c of r.cohorts) expect(c.apr).toBeCloseTo(0, 6);
+  });
+  it("unwinds still in flight at the horizon count at what they're owed", () => {
+    const p = quiet();
+    p.policy.cooldownHours = 1;
+    p.improvements.desk = false;
+    p.loop.laneCapBps = 0.01;
+    const r = runPath(p, 0).summary;
+    expect(r.withdrawnUsd).toBe(0);
+    for (const c of r.cohorts) expect(c.apr).toBeCloseTo(0, 6);
+  });
+  it("discrete requests leave room for price resizing between cooldowns", () => {
+    const p = clone(LARK4);
+    p.vaults.btc.outflowRate = 0.3;
+    p.policy.cooldownHours = 12;
+    expect(runPath(p, 0).summary.releversBtc + runPath(p, 0).summary.deleversBtc).toBeGreaterThan(0);
+  });
+});

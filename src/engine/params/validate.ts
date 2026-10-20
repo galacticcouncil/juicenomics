@@ -21,6 +21,12 @@ export function validate(input: Params): Validated {
       clamped.push(d.label);
     }
   }
+  // a day has to hold a whole number of steps, or elapsed time drifts from the horizon
+  const perDay = Math.max(1, Math.round(24 / p.sim.stepHours));
+  if (Math.abs(24 / perDay - p.sim.stepHours) > 1e-9) {
+    p = setPath(p, "sim.stepHours", 24 / perDay);
+    clamped.push("Time step (to a whole fraction of a day)");
+  }
   const issues: string[] = [];
   for (const k of ["eth", "btc"] as VaultKey[]) {
     const v = p.vaults[k];

@@ -54,6 +54,14 @@ check(simTiles.some((t) => /jBTC APR \(in tBTC\) −?\d/i.test(t)), `monte carlo
 const w = await wasmResponse;
 check(!!w && /application\/wasm/.test(w.headers()["content-type"] ?? ""), `wasm served as application/wasm (${w ? w.headers()["content-type"] : "not loaded"})`);
 await sim.page.screenshot({ path: `${OUT}simulation-run.png`, fullPage: true });
+// a finished search survives changing the search settings afterwards
+const opt = await open(ORIGIN);
+await opt.page.click('nav.tabs button:has-text("Explore & optimize")');
+await opt.page.click('button:has-text("search 8 settings")');
+await opt.page.waitForSelector('h3:has-text("Best found")', { timeout: 120000 });
+await opt.page.getByLabel("Solver cut", { exact: true }).check();
+await opt.page.waitForTimeout(300);
+check(opt.errors.length === 0 && (await opt.page.locator("h3:has-text('Best found')").count()) === 1, `optimizer results survive a settings change${opt.errors.length ? `: ${opt.errors[0]}` : ""}`);
 // live state straight from lark 4 (the rpc has to allow cross-origin reads)
 const live = await open(ORIGIN);
 await live.page.click('button:has-text("load live state")');
@@ -70,7 +78,7 @@ const wasm = await page.evaluate(async () => {
   return r.ok;
 });
 check(wasm, "index served");
-const allErrors = [...errors, ...again.errors, ...dark.errors, ...sim.errors, ...live.errors];
+const allErrors = [...errors, ...again.errors, ...dark.errors, ...sim.errors, ...live.errors, ...opt.errors];
 check(allErrors.length === 0, `no console errors${allErrors.length ? `: ${allErrors.slice(0, 3).join(" | ")}` : ""}`);
 await browser.close();
 process.exit(results.some((r) => r.startsWith("FAIL")) ? 1 : 0);
