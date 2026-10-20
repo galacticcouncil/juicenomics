@@ -25,4 +25,4 @@ node scripts/snapshot-lark4.mjs   # refresh the Lark 4 defaults (read-only chain
 SIM_URL=http://localhost:4173/ node scripts/smoke.mjs   # headless check of a running build
 ```
 
-Every push to `main` builds `galacticcouncil/juicer-sim`, updates the `juicer-sim` Swarmpit stack on lark and waits for `https://juicer-sim.lark.hydration.cloud` to serve the commit.
+CI checks lint, tests and the build. Publishing is manual from a Docker host logged in to Docker Hub: `scripts/publish-lark.sh` builds and pushes `galacticcouncil/juicer-sim:<commit>`, then updates the `juicer-sim` Swarmpit stack on lark. It reads the Swarmpit token from `SWARMPIT_TOKEN_FILE` (default `~/.lark_token`) and waits until `https://juicer-sim.lark.hydration.cloud` serves the commit.
