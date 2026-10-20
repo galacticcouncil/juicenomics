@@ -165,3 +165,4 @@ svg .val { fill: var(--text-primary); font-variant-numeric: tabular-nums; }
 .svgtip { position: absolute; pointer-events: none; background: var(--text-primary); color: var(--surface-1); padding: 4px 8px; border-radius: 4px; font-size: 11px; white-space: nowrap; z-index: 3; }
 .chart { width: 100%; }
 .scatter circle { cursor: pointer; }
+button.primary:hover:not(:disabled) { background: color-mix(in srgb, var(--series-1) 85%, black); }

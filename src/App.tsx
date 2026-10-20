@@ -12,6 +12,7 @@ import { Compare } from "./ui/views/Compare";
 import { Explore } from "./ui/views/Explore";
 import { Model } from "./ui/views/Model";
 import { Simulation } from "./ui/views/Simulation";
+import { useMonteCarlo } from "./ui/useMonteCarlo";
 
 type Tab = "overview" | "simulation" | "explore" | "compare" | "model";
 const TABS: { key: Tab; label: string }[] = [
@@ -35,6 +36,7 @@ export default function App() {
   const [banner, setBanner] = useState<string | null>(null);
   const [theme, setTheme] = useState<"auto" | "light" | "dark">(() => (localStorage.getItem("js:theme") as "light" | "dark") || "auto");
   const loaded = useRef(false);
+  const mc = useMonteCarlo();
 
   // restore from the link, else from the last session
   useEffect(() => {
@@ -131,7 +133,7 @@ export default function App() {
         </nav>
         {banner && <div className="banner">{banner} <button onClick={() => setBanner(null)}>dismiss</button></div>}
         {tab === "overview" && <Overview p={deferred} r={result} issues={issues} onApply={setCur} />}
-        {tab === "simulation" && <Simulation p={cur} />}
+        {tab === "simulation" && <Simulation p={cur} mc={mc} onApply={setCur} />}
         {tab === "explore" && <Explore p={cur} onApply={setCur} />}
         {tab === "compare" && <Compare A={deferredA} B={deferredB} rA={resA} rB={resB} onMakeB={() => { setB(clone(A)); setSide("B"); }} />}
         {tab === "model" && <Model p={deferred} r={result} />}
