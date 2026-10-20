@@ -1,0 +1,83 @@
+{
+  "source": "Lark 4 (reset 16 Oct 2026, genesis 0x80ea…229e)",
+  "evmBlock": 43428,
+  "substrateBlock": 43428,
+  "timestamp": 1792522602,
+  "prime": {
+    "price": 1.06559018,
+    "ltv": 0.85,
+    "lt": 0.88,
+    "supplyApr": 0.0003563702791626952
+  },
+  "hollar": {
+    "borrowApr": 0.044016888917752794
+  },
+  "discountBps": 0,
+  "loop": {
+    "collateralUsd": 527586.35648219,
+    "debtUsd": 440247.95182944,
+    "healthFactor": 1.0545784296668321,
+    "principal": 88521.19554565,
+    "equityUsd": 87338.40465275,
+    "targetHf": 1.05,
+    "deLeverTrigger": 1.1,
+    "harvestThreshold": 0.0002,
+    "deployTranche": 2500,
+    "unwindTranche": 2500,
+    "dcaSlippagePpm": 2700,
+    "intentDriftBps": 2,
+    "admissionMaxDeficitBps": 250
+  },
+  "vaults": {
+    "eth": {
+      "key": "eth",
+      "name": "jETH",
+      "collateral": "GIGAETH",
+      "assetId": 4200,
+      "address": "0x79b41c78a2b5ac1ddc3c80877449b1cc8f850c46",
+      "price": 2486.30925941,
+      "ltv": 0.8,
+      "lt": 0.85,
+      "units": 23.0701090474847,
+      "tvlCap": 25,
+      "withdrawalDelay": 60,
+      "mainDebt": 44969.71409117592,
+      "loopPrincipal": 44955.84198197,
+      "loopEquityUsd": 44744.65509595,
+      "protocolFeeBps": 500
+    },
+    "btc": {
+      "key": "btc",
+      "name": "jBTC",
+      "collateral": "tBTC",
+      "assetId": 1000765,
+      "address": "0x2c66100c46d15d6b826ba2a89f2d31e3ca47a153",
+      "price": 82495.41441865,
+      "ltv": 0.8,
+      "lt": 0.85,
+      "units": 0.6692996474671996,
+      "tvlCap": 1,
+      "withdrawalDelay": 60,
+      "mainDebt": 43586.26986703402,
+      "loopPrincipal": 43565.35356368,
+      "loopEquityUsd": 42593.74955679,
+      "protocolFeeBps": 500
+    }
+  },
+  "pool143": {
+    "feePpm": 400,
+    "amp": 100,
+    "pegs": [
+      [
+        "297819240719090549145598766093258908479",
+        "279491137065968052609708237980749098856"
+      ],
+      [
+        "1",
+        "1"
+      ]
+    ],
+    "prime": 455929.149,
+    "hollar": 586779.0250977236
+  }
+}
