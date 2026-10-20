@@ -124,3 +124,29 @@ describe("defaults", () => {
     }
   });
 });
+
+describe("growth", () => {
+  const grow = (g: number, f?: (p: Params) => void) => {
+    const p = clone(LARK4);
+    p.flows.growth = "exp";
+    p.flows.growthFactor = g;
+    for (const k of ["eth", "btc"] as const) p.vaults[k].capOn = false;
+    f?.(p);
+    return evaluate(p);
+  };
+  it("an incumbent pays ln(g) of its entry for pooled exponential growth, not g − 1", () => {
+    const r = grow(10, (p) => { p.costs.churnModel = "constant"; });
+    const want = Math.log(10) * r.vaults.btc.entryOneOff;
+    expect(r.vaults.btc.flows).toBeGreaterThan(0.9 * want);
+    expect(r.vaults.btc.flows).toBeLessThan(1.1 * want);
+  });
+  it("dollar figures use the average TVL: (g − 1) / ln g for exponential growth", () => {
+    const r = grow(10);
+    expect(r.totals.avgTvlUsd / r.totals.tvlUsd).toBeCloseTo(9 / Math.log(10), 1);
+    expect(r.totals.endTvlUsd / r.totals.tvlUsd).toBeCloseTo(10, 0);
+  });
+  it("the vault caps stop growth", () => {
+    const r = grow(10, (p) => { for (const k of ["eth", "btc"] as const) p.vaults[k].capOn = true; });
+    for (const k of ["eth", "btc"] as const) expect(r.vaults[k].avgTvlUsd).toBeLessThanOrEqual(LARK4.vaults[k].tvlCap * LARK4.vaults[k].price * (1 + 1e-9));
+  });
+});

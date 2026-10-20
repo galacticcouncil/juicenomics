@@ -3,7 +3,12 @@ import { BY_CODE, PARAMS, getPath, setPath } from "../params/schema";
 import type { Params } from "../params/types";
 import { validate } from "../params/validate";
 
-export const VERSION = 1;
+// 2: a fresh start became the default (v1 links implied the current state)
+export const VERSION = 2;
+const MIGRATE: Record<number, (codes: Record<string, unknown>) => Record<string, unknown>> = {
+  1: (codes) => ({ si: "lark4", ...codes }),
+  2: (codes) => codes,
+};
 
 function quantize(value: unknown, step?: number): unknown {
   if (typeof value !== "number" || !step) return value;
@@ -78,9 +83,10 @@ export async function decode(token: string): Promise<{ params: Params; ignored: 
     const version = Number.parseInt(token, 10);
     const tag = token[String(version).length];
     const body = token.slice(String(version).length + 1);
-    if (version !== VERSION) throw new Error(`unknown link version ${version}`);
+    const migrate = MIGRATE[version];
+    if (!migrate) throw new Error(`unknown link version ${version}`);
     const bytes = tag === "z" ? await pipe(unb64(body), new DecompressionStream("deflate-raw")) : unb64(body);
-    const codes = JSON.parse(new TextDecoder().decode(bytes)) as Record<string, unknown>;
+    const codes = migrate(JSON.parse(new TextDecoder().decode(bytes)) as Record<string, unknown>);
     const { params, ignored } = apply(codes);
     const v = validate(params);
     return { params: v.params, ignored, clamped: v.clamped };

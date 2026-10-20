@@ -7,6 +7,58 @@ import { costs, type CostBreakdown } from "./costs";
  * Monte Carlo at 1-50× Lark 4's TVL, wide bands and a 2 bps pool fee: rmse 0.10 pp) */
 export const NETTING = { floor: -0.3, base: 1.5, div: 32 };
 
+export interface TvlPath {
+  /** average and final TVL over the horizon, $ */
+  avgUsd: number;
+  endUsd: number;
+  /** deposits actually admitted, $ per year */
+  inflowPerYear: number;
+  /** time average of inflow / TVL: what an incumbent's share of newcomers' entries scales with */
+  holderInflow: number;
+}
+
+/** each vault's TVL over the horizon at today's prices: steady inflows, growth, withdrawals and the cap, as the Monte Carlo admits them */
+export function tvlPaths(p: Params, years: number): { vaults: Record<VaultKey, TvlPath>; holderInflow: number; avgUsd: number; inflowPerYear: number } {
+  const T = Math.max(1 / 365, years);
+  const n = 400;
+  const h = T / n;
+  const lambda = p.flows.growth === "exp" ? Math.log(Math.max(1, p.flows.growthFactor)) / T : 0;
+  const keys: VaultKey[] = ["eth", "btc"];
+  const V = {} as Record<VaultKey, number>;
+  const sum = {} as Record<VaultKey, { v: number; inflow: number; frac: number }>;
+  for (const k of keys) {
+    V[k] = p.vaults[k].units * p.vaults[k].price;
+    sum[k] = { v: 0, inflow: 0, frac: 0 };
+  }
+  let loopFrac = 0;
+  for (let i = 0; i < n; i++) {
+    let inAll = 0;
+    let vAll = 0;
+    for (const k of keys) {
+      const v = p.vaults[k];
+      const linear = p.flows.growth === "linear" ? (v.units * v.price * Math.max(0, p.flows.growthFactor - 1)) / T : 0;
+      const out = v.outflowRate * V[k];
+      const cap = v.capOn ? v.tvlCap * v.price : Infinity;
+      const inflow = Math.min(v.inflowUsd + linear + lambda * V[k], Math.max(0, (cap - V[k]) / h + out));
+      sum[k].v += V[k];
+      sum[k].inflow += inflow;
+      sum[k].frac += V[k] > 0 ? inflow / V[k] : 0;
+      inAll += inflow;
+      vAll += V[k];
+      V[k] = Math.max(0, V[k] + (inflow - out) * h);
+    }
+    loopFrac += vAll > 0 ? inAll / vAll : 0;
+  }
+  const vaults = {} as Record<VaultKey, TvlPath>;
+  for (const k of keys) vaults[k] = { avgUsd: sum[k].v / n, endUsd: V[k], inflowPerYear: sum[k].inflow / n, holderInflow: sum[k].frac / n };
+  return {
+    vaults,
+    holderInflow: loopFrac / n,
+    avgUsd: keys.reduce((a, k) => a + vaults[k].avgUsd, 0),
+    inflowPerYear: keys.reduce((a, k) => a + vaults[k].inflowPerYear, 0),
+  };
+}
+
 export interface Leverage {
   L: number;
   hfEff: number;
@@ -60,7 +112,10 @@ export interface VaultResult {
   /** days of the depositor's net carry to earn back its own entry (and exit) */
   breakEvenDays: number;
   roundTripDays: number;
-  firstCohortGrowthCost: number;
+  /** what a day-0 holder earns over the simulated horizon (a fresh start pays its ramp in it): compare with the Monte Carlo */
+  horizonApr: number;
+  /** average TVL over the horizon, the base for the $ figures */
+  avgTvlUsd: number;
   /** structural deficit of a fully deployed vault, bps of its HOLLAR principal */
   deficitBps: number;
   waterfall: Step[];
@@ -80,7 +135,8 @@ export interface ClosedResult {
   lark4Now: { holeUsd: number; holeBps: number; holeMarketUsd: number };
   protocol: { hollarInterest: number; collateralFee: number; lpFees: number; depositFees: number; deskSpread: number; incentiveCost: number; total: number; inCollateralShare: number };
   external: { arbGross: number; arbOtherLeg: number; arbNet: number; solver: number };
-  totals: { tvlUsd: number; userNet: number; userAprWeighted: number; primeYieldPie: number; primeDemandUsd: number };
+  /** tvlUsd: today; avgTvlUsd / endTvlUsd: over the horizon (growth, withdrawals, caps), the base for $ per year */
+  totals: { tvlUsd: number; avgTvlUsd: number; endTvlUsd: number; userNet: number; userAprWeighted: number; primeYieldPie: number; primeDemandUsd: number };
   issues: string[];
 }
 
@@ -103,15 +159,17 @@ export function evaluate(p: Params): ClosedResult {
 
   // PRIME the loop must buy: churn relevers plus inflows over the horizon
   const tvl = (k: VaultKey) => p.vaults[k].units * p.vaults[k].price;
+  // a growing (or capped) vault: $ volumes and revenue scale with its average TVL over the horizon
+  const growthPath = tvlPaths(p, horizonYears);
+  const size = (k: VaultKey) => growthPath.vaults[k].avgUsd;
   const bandOf = (k: VaultKey) => {
     const v = p.vaults[k];
     return bands({ lo: v.bandLo, target: v.bandTarget, hi: v.bandHi, vol: v.vol, drift: v.drift, monitorYears });
   };
   const bandRes = { eth: bandOf("eth"), btc: bandOf("btc") };
-  const growthInflow = (k: VaultKey) => (p.flows.growth === "none" ? 0 : tvl(k) * Math.max(0, p.flows.growthFactor - 1) / horizonYears);
-  const inflow = (k: VaultKey) => p.vaults[k].inflowUsd + growthInflow(k);
+  const inflow = (k: VaultKey) => growthPath.vaults[k].inflowPerYear;
   const primeDemandUsd = KEYS.reduce(
-    (acc, k) => acc + L * (bandRes[k].releverPerYear * tvl(k) + inflow(k) * p.vaults[k].bandTarget) * horizonYears,
+    (acc, k) => acc + L * (bandRes[k].releverPerYear * size(k) + inflow(k) * p.vaults[k].bandTarget) * horizonYears,
     p.sim.initial === "fresh" ? KEYS.reduce((a, k) => a + L * tvl(k) * p.vaults[k].bandTarget, 0) : 0,
   );
   const c = costs(p, primeDemandUsd);
@@ -122,7 +180,7 @@ export function evaluate(p: Params): ClosedResult {
   // trading volumes per vault, $ per year
   const vol = {} as Record<VaultKey, { entry: number; unwind: number; churnEntry: number; churnUnwind: number }>;
   for (const k of KEYS) {
-    const t = tvl(k);
+    const t = size(k);
     const br = bandRes[k];
     const v = p.vaults[k];
     const inflowFrac = t > 0 ? inflow(k) / t : 0;
@@ -141,7 +199,7 @@ export function evaluate(p: Params): ClosedResult {
   const depthUsd = p.pool.prime * p.market.primePrice + p.pool.hollar;
   const eventUsd = KEYS.reduce((a, k) => {
     const br = bandRes[k];
-    const t = tvl(k);
+    const t = size(k);
     const ev = br.eventsPerYear > 0 ? (br.releverPerYear + br.deleverPerYear) / br.eventsPerYear : 0;
     return a + L * ev * t;
   }, 0) / KEYS.length;
@@ -160,23 +218,30 @@ export function evaluate(p: Params): ClosedResult {
   const totalUnwind = KEYS.reduce((a, k) => a + vol[k].unwind, 0);
   const poolCost = tradingCost(totalEntry, totalUnwind);
   const weight = (k: VaultKey) => {
-    const w = (x: VaultKey) => bandRes[x].avgLtv * tvl(x);
+    const w = (x: VaultKey) => bandRes[x].avgLtv * size(x);
     const sum = w("eth") + w("btc");
     return sum > 0 ? w(k) / sum : 0.5;
   };
+
+  // an incumbent bears each newcomer's pooled entry in proportion to the TVL at the time, so constant-$ inflows into a
+  // growing vault cost it the time average of inflow/TVL, more than the $ average (1× for exponential growth)
+  const inflowProxy = KEYS.reduce((a, k) => a + L * inflow(k) * p.vaults[k].bandTarget * cE, 0);
+  const outflowProxy = KEYS.reduce((a, k) => a + L * p.vaults[k].outflowRate * size(k) * p.vaults[k].bandTarget * cU, 0);
+  const inflowShare = inflowProxy + outflowProxy > 0 ? inflowProxy / (inflowProxy + outflowProxy) : 0;
+  const holderJensen = growthPath.inflowPerYear > 0 ? (growthPath.holderInflow * growthPath.avgUsd) / growthPath.inflowPerYear : 1;
+  const holderFlows = inflowShare * holderJensen + (1 - inflowShare);
 
   let deskVolume = 0;
   const vaults = {} as Record<VaultKey, VaultResult>;
   for (const k of KEYS) {
     const v = p.vaults[k];
-    const t = tvl(k);
+    const t = size(k);
     const br = bandRes[k];
     const lbar = br.avgLtv;
     const primeYield = lbar * L * y;
     const loopInterest = lbar * (L - 1) * rLoop;
     const mainInterest = lbar * rMain;
     const gross = primeYield - loopInterest - mainInterest;
-    const inflowFrac = t > 0 ? inflow(k) / t : 0;
     let depositFeeRate = 0;
     if (p.depositFee.on) depositFeeRate = p.depositFee.auto ? cE * L * v.bandTarget : p.depositFee.bps / 1e4;
     // pooled: everyone shares the whole loop's trading; own: a vault pays its own churn, newcomers and leavers their own trades
@@ -184,11 +249,11 @@ export function evaluate(p: Params): ClosedResult {
     const pooledUsd = poolCost * weight(k);
     const churnShare = poolCost > 0 ? tradingCost(KEYS.reduce((a, x) => a + vol[x].churnEntry, 0), KEYS.reduce((a, x) => a + vol[x].churnUnwind, 0)) / poolCost : 0;
     const churnUsd = pooled ? pooledUsd * churnShare : ownChurnUsd;
-    let flowUsd = pooled ? pooledUsd * (1 - churnShare) : 0;
-    // a deposit fee paid into the loop goes to everyone already in it; past newcomers' costs it's a gain
-    if (p.depositFee.on && p.depositFee.dest === "loop") flowUsd -= inflowFrac * t * depositFeeRate;
+    const flowUsd = pooled ? pooledUsd * (1 - churnShare) : 0;
     const churn = t > 0 ? churnUsd / t : 0;
-    const flows = t > 0 ? flowUsd / t : 0;
+    // a deposit fee paid into the loop goes to everyone already in it; past newcomers' costs it's a gain
+    const feeBack = p.depositFee.on && p.depositFee.dest === "loop" ? growthPath.vaults[k].holderInflow * depositFeeRate : 0;
+    const flows = (t > 0 ? (flowUsd / t) * holderFlows : 0) - feeBack;
     const afterCosts = gross - churn - flows;
     // contracts take the fee on the whole harvest, which still includes the slice that services vault interest
     const feeBase = p.fees.feeBase === "gross" ? gross : p.fees.feeBase === "yield" ? afterCosts : afterCosts + mainInterest;
@@ -196,11 +261,11 @@ export function evaluate(p: Params): ClosedResult {
     const net = afterCosts - feeTaken;
     const entryOneOff = cE * L * v.bandTarget;
     const exitOneOff = cU * L * v.bandTarget;
-    const growth = p.flows.growth === "none" ? 1 : p.flows.growthFactor;
     vaults[k] = {
       key: k,
       name: v.name,
-      tvlUsd: t,
+      tvlUsd: tvl(k),
+      avgTvlUsd: t,
       bands: br,
       avgLtv: lbar,
       primeYield,
@@ -220,7 +285,7 @@ export function evaluate(p: Params): ClosedResult {
       year1: net - entryOneOff - exitOneOff - depositFeeRate,
       breakEvenDays: net > 0 ? (365 * (entryOneOff + depositFeeRate)) / net : Infinity,
       roundTripDays: net > 0 ? (365 * (entryOneOff + exitOneOff + depositFeeRate)) / net : Infinity,
-      firstCohortGrowthCost: pooled ? entryOneOff * Math.log(Math.max(1, growth)) : 0,
+      horizonApr: net - (p.sim.initial === "fresh" ? entryOneOff / Math.max(1 / 365, horizonYears) : 0),
       deficitBps: cE * L * 1e4,
       waterfall: [
         { label: "PRIME yield", value: primeYield, kind: "start" },
@@ -262,14 +327,15 @@ export function evaluate(p: Params): ClosedResult {
   const direct = p.improvements.desk && p.improvements.deskMode === "direct";
   const poolEntry = (direct ? 1 - c.deskCoverage : 1) * totalEntry;
   const poolUnwind = (direct && p.improvements.deskBid ? 1 - c.deskCoverage : 1) * totalUnwind;
-  const matched = p.costs.churnModel === "constant" ? 0 : netting * Math.min(poolEntry, poolUnwind);
+  // the cost curve may extrapolate past [0, 1]; matched token volume can't
+  const matched = p.costs.churnModel === "constant" ? 0 : Math.min(1, Math.max(0, netting)) * Math.min(poolEntry, poolUnwind);
   const arbVolume = (direct ? 1 : 1 - c.deskCoverage) * Math.max(0, poolEntry - matched);
   const lpFees = feeRate * (2 * (poolEntry + poolUnwind) - 2 * matched);
   const depositFees = p.depositFee.on && p.depositFee.dest === "protocol"
     ? KEYS.reduce((a, k) => a + vaults[k].depositFee * inflow(k), 0)
     : 0;
   const deskSpread = (p.improvements.deskSpreadBps / 1e4) * deskVolume;
-  const juicerPrime = KEYS.reduce((a, k) => a + vaults[k].avgLtv * L * vaults[k].tvlUsd, 0);
+  const juicerPrime = KEYS.reduce((a, k) => a + vaults[k].avgLtv * L * vaults[k].avgTvlUsd, 0);
   const incentiveCost = p.improvements.incentiveScope === "blanket"
     ? inc * Math.max(juicerPrime, p.improvements.blanketPrime * p.market.primePrice)
     : inc * juicerPrime;
@@ -304,8 +370,10 @@ export function evaluate(p: Params): ClosedResult {
     external: { arbGross, arbOtherLeg, arbNet: arbGross - arbOtherLeg, solver: (p.loop.solverBps / 1e4) * KEYS.reduce((a, k) => a + vaults[k].usd.entryVolume, 0) },
     totals: {
       tvlUsd: tvlTotal,
+      avgTvlUsd: growthPath.avgUsd,
+      endTvlUsd: KEYS.reduce((a, k) => a + growthPath.vaults[k].endUsd, 0),
       userNet,
-      userAprWeighted: tvlTotal > 0 ? userNet / tvlTotal : 0,
+      userAprWeighted: growthPath.avgUsd > 0 ? userNet / growthPath.avgUsd : 0,
       primeYieldPie: KEYS.reduce((a, k) => a + vaults[k].usd.primeYield, 0),
       primeDemandUsd,
     },

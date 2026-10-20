@@ -126,10 +126,13 @@ export async function loadLive(dep: Deployment, url = dep.rpc): Promise<LiveStat
   const r = await ethCalls(url, calls, blockHex);
   const ledgers = keys.map((_, i) => r[10 + i * 9 + 5] as Hex);
   const positions = await ethCalls(url, ledgers.map((l) => ({ to: l, sig: "function activePosition() view returns (uint256,uint256,uint256)" })), blockHex);
-  const [info, primeRes] = (await rpc(url, [
+  // a batch may answer in any order
+  const storage = new Map(((await rpc(url, [
     { jsonrpc: "2.0", id: 1, method: "state_getStorage", params: [POOL143_INFO_KEY] },
     { jsonrpc: "2.0", id: 2, method: "state_getStorage", params: [POOL143_PRIME_KEY] },
-  ])) as { id: number; result: string | null }[];
+  ])) as { id: number; result: string | null }[]).map((x) => [x.id, x]));
+  const info = storage.get(1);
+  const primeRes = storage.get(2);
   const notes: string[] = [];
 
   // PRIME's yield over the last week from its oracle drift

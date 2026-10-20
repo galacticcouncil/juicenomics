@@ -103,7 +103,7 @@ export const LARK4: Params = Object.freeze({
     costReserveBps: lark4.loop.dcaSlippagePpm / 100,
   },
   flows: { growth: "none", growthFactor: 1, sizeMedianUsd: 5_000, sizeSigma: 1.2 },
-  sim: { horizonDays: 365, stepHours: 1, paths: 200, seed: 7, poolMode: "fast", initial: "lark4", stateBlock: lark4.evmBlock },
+  sim: { horizonDays: 365, stepHours: 1, paths: 200, seed: 7, poolMode: "fast", initial: "fresh", stateBlock: lark4.evmBlock },
 }) as Params;
 
 export const SNAPSHOT = { evmBlock: lark4.evmBlock, timestamp: lark4.timestamp, source: lark4.source, pegs: lark4.pool143.pegs };

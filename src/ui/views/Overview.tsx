@@ -49,7 +49,6 @@ function VaultCard({ v, color }: { v: VaultResult; color: string }) {
           <tr><td>average LTV · rebalances / yr</td><td className="num">{fmtPct(v.avgLtv, 1)} · {v.bands.eventsPerYear.toFixed(0)}</td></tr>
           <tr><td>re-borrowed / repaid per yr (of TVL)</td><td className="num">{fmtPct(v.bands.releverPerYear, 0)} / {fmtPct(v.bands.deleverPerYear, 0)}</td></tr>
           <tr><td>one-off entry · exit cost (of deposit)</td><td className="num">{fmtPct(v.entryOneOff)} · {fmtPct(v.exitOneOff)}</td></tr>
-          {v.firstCohortGrowthCost > 0 && <tr><td>first depositors pay for growth (pooled costs)</td><td className="num">{fmtPct(v.firstCohortGrowthCost)}</td></tr>}
         </tbody>
       </table>
     </div>
@@ -67,19 +66,22 @@ export function Overview({ p, r, issues, onApply }: { p: Params; r: ClosedResult
   }), [p]);
   const pr = r.protocol;
   const t = r.totals;
+  const grows = Math.abs(t.endTvlUsd - t.tvlUsd) > 0.01 * t.tvlUsd;
+  // what the Monte Carlo's share APR measures: a day-0 holder over the horizon, a fresh start paying its ramp inside it
+  const horizon = (v: VaultResult) => (p.sim.initial === "fresh" ? `${p.sim.horizonDays} d from a fresh start ${fmtPct(v.horizonApr)}` : `a new deposit's first year ${fmtPct(v.year1)}`);
   const costs = r.vaults.eth.usd.churnCost + r.vaults.btc.usd.churnCost + r.vaults.eth.usd.flowCost + r.vaults.btc.usd.flowCost;
   return (
     <>
       <Flags r={r} issues={issues} />
       <div className="tiles">
-        <Tile label="jETH net APR" value={fmtPct(r.vaults.eth.net)} sub={`APY ${fmtPct(r.vaults.eth.netApy)}${r.vaults.eth.inKind ? ` · ${fmtPct(r.vaults.eth.netWithInKind)} with GIGAETH yield` : ""}`} />
-        <Tile label="jBTC net APR" value={fmtPct(r.vaults.btc.net)} sub={`APY ${fmtPct(r.vaults.btc.netApy)} · first year ${fmtPct(r.vaults.btc.year1)}`} />
+        <Tile label="jETH net APR" value={fmtPct(r.vaults.eth.net)} sub={`APY ${fmtPct(r.vaults.eth.netApy)}${r.vaults.eth.inKind ? ` (${fmtPct(r.vaults.eth.netWithInKind)} with GIGAETH yield)` : ""} · ${horizon(r.vaults.eth)}`} title="steady-state APR in GIGAETH; the second figure is comparable with the Simulation tab" />
+        <Tile label="jBTC net APR" value={fmtPct(r.vaults.btc.net)} sub={`APY ${fmtPct(r.vaults.btc.netApy)} · ${horizon(r.vaults.btc)}`} title="steady-state APR in tBTC; the second figure is comparable with the Simulation tab" />
         <Tile label="Break-even" value={fmtDays(r.breakEven.entryDays)} sub={`entry · round trip ${fmtDays(r.breakEven.roundTripDays)} · deficit repaid in ${fmtDays(r.breakEven.holeDays)}`} title="days of a depositor's net carry (after fees and costs) to earn back its own entry (and exit), slower vault; the deficit repays sooner because nothing is harvested or fee'd until it's gone" />
         <Tile label="Leverage" value={fmtX(r.lev.L)} sub={`HF ${r.lev.hfEff.toFixed(3)} · liquidated by a ${fmtPct(r.lev.liqDrop, 1)} PRIME drop`} />
         <Tile label="Entry · unwind cost" value={`${r.costs.entryBps.toFixed(1)} · ${r.costs.unwindBps.toFixed(1)}`} sub={`bps vs oracle${r.costs.stall ? " · STALLS at the lane cap" : ""}${r.costs.deskCoverage ? ` · desk covers ${fmtPct(r.costs.deskCoverage, 0)}` : ""}`} />
         <Tile label="Deficit when ramped" value={fmtBps(r.deficit.structuralBps, 0)} sub={`gate ${r.deficit.stopsAt} bps · deposits close past ${fmtX(r.deficit.closeAtLeverage, 1)}`} />
-        <Tile label="Protocol revenue / yr" value={fmtUsd(pr.total)} sub={`${fmtPct(t.tvlUsd ? pr.total / t.tvlUsd : 0, 1)} of TVL · ${fmtPct(pr.inCollateralShare, 0)} in collateral`} />
-        <Tile label="Depositors earn / yr" value={fmtUsd(t.userNet)} sub={`${fmtPct(t.userAprWeighted)} on ${fmtUsd(t.tvlUsd)} TVL`} />
+        <Tile label="Protocol revenue / yr" value={fmtUsd(pr.total)} sub={`${fmtPct(t.avgTvlUsd ? pr.total / t.avgTvlUsd : 0, 1)} of ${grows ? "average " : ""}TVL · ${fmtPct(pr.inCollateralShare, 0)} in collateral`} />
+        <Tile label="Depositors earn / yr" value={fmtUsd(t.userNet)} sub={`${fmtPct(t.userAprWeighted)} on ${fmtUsd(t.avgTvlUsd)} ${grows ? `average TVL (${fmtUsd(t.tvlUsd)} → ${fmtUsd(t.endTvlUsd)})` : "TVL"}`} />
         <Tile label="Lark 4 hole now" value={fmtUsd(r.lark4Now.holeUsd)} sub={`${fmtBps(r.lark4Now.holeBps, 0)} at the oracle · ${fmtUsd(r.lark4Now.holeMarketUsd)} at HOLLAR's market price`} />
       </div>
 

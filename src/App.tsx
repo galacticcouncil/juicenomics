@@ -117,9 +117,9 @@ export default function App() {
           <button className={side === "B" ? "on" : ""} onClick={() => { if (!B) setB(clone(A)); setSide("B"); }}>B</button>
         </span>
         {B && <button onClick={() => { setB(null); setSide("A"); }} title="drop scenario B">✕ B</button>}
-        <button onClick={() => setCur(clone(LARK4))} title={`Lark 4 at block ${SNAPSHOT.evmBlock}`}>reset to Lark 4</button>
+        <button onClick={() => setCur(clone(LARK4))} title={`Lark 4's settings at block ${SNAPSHOT.evmBlock}, fresh start`}>reset to Lark 4</button>
         <LiveLoader p={cur} onApply={setCur} onLoaded={setBanner} />
-        <span className="muted small" title="block the starting state comes from">state @ {cur.sim.stateBlock.toLocaleString("en-US")}{cur.sim.stateBlock === SNAPSHOT.evmBlock ? " (snapshot)" : " (live)"}</span>
+        <span className="muted small" title="where the simulation starts: a fresh ramp, or the chain's loop and vault positions at a block">{cur.sim.initial === "fresh" ? "fresh start" : `state @ ${cur.sim.stateBlock.toLocaleString("en-US")} ${cur.sim.stateBlock === SNAPSHOT.evmBlock ? "(snapshot)" : "(live)"}`}</span>
         <span className="spacer" />
         <select value={theme} onChange={(e) => setTheme(e.target.value as "auto" | "light" | "dark")} title="theme">
           <option value="auto">system theme</option>

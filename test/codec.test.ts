@@ -29,3 +29,21 @@ describe("share links", () => {
     expect(r.clamped.length).toBeGreaterThan(0);
   });
 });
+
+describe("link versions", () => {
+  const v1 = (codes: Record<string, unknown>) => `1j${btoa(JSON.stringify(codes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")}`;
+  it("a v1 link keeps starting from the current state, its old default", async () => {
+    const back = await decode(v1({ pf: 2 }));
+    expect(back.error).toBeUndefined();
+    expect(back.params.sim.initial).toBe("lark4");
+  });
+  it("a v1 link that chose a fresh start keeps it", async () => {
+    expect((await decode(v1({ si: "fresh" }))).params.sim.initial).toBe("fresh");
+  });
+  it("new links start fresh unless they say otherwise", async () => {
+    expect(LARK4.sim.initial).toBe("fresh");
+    const p = clone(LARK4);
+    p.sim.initial = "lark4";
+    expect((await decode(await encode(p))).params.sim.initial).toBe("lark4");
+  });
+});

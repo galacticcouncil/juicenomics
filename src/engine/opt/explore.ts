@@ -16,7 +16,7 @@ export const METRICS: Metric[] = [
   { key: "eth", label: "jETH user APR", unit: "pct", better: "high", of: (r) => r.vaults.eth.net },
   { key: "btc", label: "jBTC user APR", unit: "pct", better: "high", of: (r) => r.vaults.btc.net },
   { key: "protocol", label: "protocol revenue / yr", unit: "usd", better: "high", of: (r) => r.protocol.total },
-  { key: "protocolPct", label: "protocol revenue, % of TVL", unit: "pct", better: "high", of: (r) => (r.totals.tvlUsd > 0 ? r.protocol.total / r.totals.tvlUsd : 0) },
+  { key: "protocolPct", label: "protocol revenue, % of TVL", unit: "pct", better: "high", of: (r) => (r.totals.avgTvlUsd > 0 ? r.protocol.total / r.totals.avgTvlUsd : 0) },
   { key: "breakEven", label: "entry break-even", unit: "days", better: "low", of: (r) => r.breakEven.entryDays },
   { key: "deficit", label: "structural deficit", unit: "bps", better: "low", of: (r) => r.deficit.structuralBps },
   { key: "churn", label: "rebalance churn, worse vault", unit: "pct", better: "low", of: (r) => Math.max(r.vaults.eth.churn, r.vaults.btc.churn) },
@@ -169,7 +169,7 @@ export interface Constraints {
 export function feasibleWith(c: Constraints) {
   return (r: ClosedResult) =>
     Math.min(r.vaults.eth.net, r.vaults.btc.net) >= c.minUserApr &&
-    (r.totals.tvlUsd > 0 ? r.protocol.total / r.totals.tvlUsd : 0) >= c.minProtocolPct &&
+    (r.totals.avgTvlUsd > 0 ? r.protocol.total / r.totals.avgTvlUsd : 0) >= c.minProtocolPct &&
     r.breakEven.entryDays <= c.maxBreakEvenDays &&
     (!c.noStall || !r.costs.stall) &&
     (!c.noClose || !r.deficit.depositsClose) &&

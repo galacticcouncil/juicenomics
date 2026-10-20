@@ -5,8 +5,19 @@ import type { Params } from "../../engine/params/types";
 import { fmtNum, fromDisplay, toDisplay, unitLabel } from "../fmt";
 
 // fields that only matter in some modes
+// the chain's positions only matter when the simulation starts from them
+const fromState = (p: Params) => p.sim.initial === "lark4";
 const VISIBLE: Record<string, (p: Params) => boolean> = {
   "loop.targetHf": (p) => p.loop.mode === "hf",
+  "loop.collateralUsd": fromState,
+  "loop.debtUsd": fromState,
+  "vaults.eth.mainDebt": fromState,
+  "vaults.eth.loopPrincipal": fromState,
+  "vaults.eth.loopEquityUsd": fromState,
+  "vaults.btc.mainDebt": fromState,
+  "vaults.btc.loopPrincipal": fromState,
+  "vaults.btc.loopEquityUsd": fromState,
+  "sim.stateBlock": fromState,
   "market.stressDay": (p) => ["v20", "crash30", "oracleStep"].includes(p.market.stress),
   "loop.hfLag": (p) => p.loop.mode === "hf",
   "loop.leverage": (p) => p.loop.mode === "lev",

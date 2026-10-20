@@ -98,6 +98,8 @@ interface Request {
   charged: number;
   allowance: number;
   debtShare: number;
+  // Main interest the claim carries: an exit's accrued slice, the interest share of a delever's repayments
+  interest: number;
   collateralOwed: number;
   cohortShares: { c: Cohort; shares: number }[];
 }
@@ -338,7 +340,7 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
     totalShares -= burn;
     v.principal -= basis;
     owed += amount;
-    requests.push({ vault: v.key, kind, owed: amount, freed: 0, charged: 0, allowance: Math.max(0, amount - basis), debtShare: 0, collateralOwed: 0, cohortShares: [], ...extra });
+    requests.push({ vault: v.key, kind, owed: amount, freed: 0, charged: 0, allowance: Math.max(0, amount - basis), debtShare: 0, interest: 0, collateralOwed: 0, cohortShares: [], ...extra });
   };
   const repayMain = (v: Vault, amount: number) => {
     const x = Math.min(amount, v.D);
@@ -352,7 +354,10 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
   const settle = (q: Request, amount: number) => {
     const v = vaults[q.vault];
     q.freed += amount;
-    if (q.kind === "delever") repayMain(v, amount);
+    if (q.kind === "delever") {
+      if (v.D > 0) q.interest += (amount * Math.max(0, v.D - v.mainPrincipal)) / v.D;
+      repayMain(v, amount);
+    }
   };
   const finishExit = (q: Request, feeCut = 0) => {
     const v = vaults[q.vault];
@@ -362,10 +367,17 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
     const total = q.cohortShares.reduce((a, x) => a + x.shares, 0) || 1;
     for (const x of q.cohortShares) x.c.exitedUnits += (valueUsd * x.shares) / total / v.P;
   };
-  // the protocol fee on an unwound slice's own yield is paid when its claim closes
+  // the protocol fee on an unwound slice's own yield is paid when its claim closes, on the selected base
+  const claimFee = (q: Request) => {
+    const earned = Math.max(0, q.allowance - q.charged);
+    const base = p.fees.feeBase === "contract" ? earned
+      : p.fees.feeBase === "yield" ? earned - q.interest
+      : Math.max(0, q.allowance) - q.interest;
+    return Math.min(Math.max(0, q.owed - q.charged), Math.max(0, base) * fee);
+  };
   const closeRequest = (q: Request) => {
     const v = vaults[q.vault];
-    const feeCut = fee * Math.max(0, q.allowance - q.charged);
+    const feeCut = claimFee(q);
     ledger.collateralFee += feeCut;
     if (q.kind === "exit") finishExit(q, feeCut);
     else {
@@ -407,7 +419,12 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
       const d = vaults[k].D * (Math.exp(rMain * dt) - 1);
       vaults[k].D += d;
       mainInt += d;
-      for (const q of requests) if (q.vault === k && q.kind === "exit") q.debtShare *= Math.exp(rMain * dt);
+      for (const q of requests) {
+        if (q.vault !== k || q.kind !== "exit") continue;
+        const grown = q.debtShare * (Math.exp(rMain * dt) - 1);
+        q.debtShare += grown;
+        q.interest += grown;
+      }
     }
     ledger.hollarInterest += loopInt + mainInt;
     if (inc > 0) {
@@ -490,13 +507,14 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
       const frac = Math.min(1, x.shares / v.supply);
       const collateralOwed = v.Q * frac;
       const debtShare = v.D * frac;
+      const interest = Math.max(0, v.D - v.mainPrincipal) * frac;
       const equity = v.loopShares * eps() * frac;
       v.Q -= collateralOwed;
       repayMain(v, debtShare);
       v.supply -= x.shares;
       v.pendingExit -= x.shares;
-      requestUnwind(v, equity, "exit", { debtShare, collateralOwed, cohortShares: x.cohortShares });
-      if (equity <= 0) finishExit({ vault: x.vault, kind: "exit", owed: 0, freed: 0, charged: 0, allowance: 0, debtShare, collateralOwed, cohortShares: x.cohortShares });
+      requestUnwind(v, equity, "exit", { debtShare, interest, collateralOwed, cohortShares: x.cohortShares });
+      if (equity <= 0) finishExit({ vault: x.vault, kind: "exit", owed: 0, freed: 0, charged: 0, allowance: 0, debtShare, interest, collateralOwed, cohortShares: x.cohortShares });
     }
 
     // 4. harvest the loop-wide surplus above principal into collateral; queued unwinds keep their
@@ -524,8 +542,10 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
           const base = p.fees.feeBase === "contract" ? surplus - swap
             : p.fees.feeBase === "yield" ? surplus - swap - due
             : surplus - swap - due + v.costAcc;
-          const protocolCut = Math.min(surplus - swap, Math.max(0, base)) * fee;
-          v.costAcc = 0;
+          // the fee is the rate times the base, capped by what this harvest can pay; gross carries what it couldn't
+          const cut = Math.max(0, base) * fee;
+          const protocolCut = Math.min(surplus - swap, cut);
+          v.costAcc = p.fees.feeBase === "gross" && fee > 0 && cut > protocolCut ? (cut - protocolCut) / fee : 0;
           let net = surplus - swap - protocolCut;
           // Main interest is serviced from the harvest before anything compounds
           const service = Math.min(due, net);
@@ -623,6 +643,14 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
       cash -= m;
       owed -= m;
       settle(q, m);
+    }
+    for (let j = requests.length - 1; j >= 0; j--) {
+      const q = requests[j];
+      const need = q.owed - q.freed - q.charged;
+      if (need > 0.005) continue;
+      owed -= Math.max(0, need);
+      requests.splice(j, 1);
+      closeRequest(q);
     }
     while (requests.length && A > 0 && budgetOut > 1) {
       const q = requests[0];
@@ -784,7 +812,7 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
     for (const x of exits) if (x.vault === k) for (const cs of x.cohortShares) add(cs.c, cs.shares * nav);
     for (const q of requests) {
       if (q.vault !== k || q.kind !== "exit") continue;
-      const usd = q.collateralOwed * v.P + (q.owed - q.charged) - q.debtShare - fee * Math.max(0, q.allowance - q.charged);
+      const usd = q.collateralOwed * v.P + (q.owed - q.charged) - q.debtShare - claimFee(q);
       const total = q.cohortShares.reduce((a, cs) => a + cs.shares, 0) || 1;
       for (const cs of q.cohortShares) add(cs.c, (usd * cs.shares) / total / v.P);
     }

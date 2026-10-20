@@ -49,8 +49,8 @@ describe("monte carlo", () => {
     p.vaults.btc.vol = 0;
     const r = runPath(p, 0);
     const cf = evaluate(p);
-    expect(Math.abs(r.summary.aprBtc - cf.vaults.btc.net)).toBeLessThan(0.004);
-    expect(Math.abs(r.summary.aprEth - cf.vaults.eth.net)).toBeLessThan(0.004);
+    expect(Math.abs(r.summary.aprBtc - cf.vaults.btc.horizonApr)).toBeLessThan(0.004);
+    expect(Math.abs(r.summary.aprEth - cf.vaults.eth.horizonApr)).toBeLessThan(0.004);
   });
   it("with today's volatility the closed form tracks the simulation within ~0.6 pp", () => {
     const p = clone(LARK4);
@@ -58,8 +58,8 @@ describe("monte carlo", () => {
     const runs = [0, 1, 2, 3].map((i) => runPath(p, i).summary);
     const mean = (f: (s: (typeof runs)[number]) => number) => runs.reduce((a, s) => a + f(s), 0) / runs.length;
     const cf = evaluate(p);
-    expect(Math.abs(mean((s) => s.aprBtc) - cf.vaults.btc.net)).toBeLessThan(0.006);
-    expect(Math.abs(mean((s) => s.aprEth) - cf.vaults.eth.net)).toBeLessThan(0.006);
+    expect(Math.abs(mean((s) => s.aprBtc) - cf.vaults.btc.horizonApr)).toBeLessThan(0.006);
+    expect(Math.abs(mean((s) => s.aprEth) - cf.vaults.eth.horizonApr)).toBeLessThan(0.006);
   });
   it("same seed, same path", () => {
     const p = clone(LARK4);
@@ -122,6 +122,7 @@ describe("harvest", () => {
   });
   it("a crash hurts while the entry hole is open, not after", () => {
     const p = clone(LARK4);
+    p.sim.initial = "lark4";
     p.sim.horizonDays = 240;
     p.market.stress = "crash30";
     const stop = (day: number) => { p.market.stressDay = day; const s = runPath(p, 3).summary; return s.stopHoursEth + s.stopHoursBtc; };
