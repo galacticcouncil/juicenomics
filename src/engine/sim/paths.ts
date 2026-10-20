@@ -16,15 +16,16 @@ function dailyReturns(series: number[]): number[] {
 
 /** multiplier applied on top of the paths at time t (days) */
 export function stressFactor(p: Params, day: number): number {
+  const t = day - p.market.stressDay;
   switch (p.market.stress) {
     case "v20":
-      if (day < 20) return 1;
-      if (day < 30) return 1 - 0.2 * ((day - 20) / 10);
-      if (day < 40) return 0.8 + 0.16 * ((day - 30) / 10);
+      if (t < 0) return 1;
+      if (t < 10) return 1 - 0.2 * (t / 10);
+      if (t < 20) return 0.8 + 0.16 * ((t - 10) / 10);
       return 0.96;
     case "crash30":
-      if (day < 20) return 1;
-      if (day < 22) return 1 - 0.3 * ((day - 20) / 2);
+      if (t < 0) return 1;
+      if (t < 2) return 1 - 0.3 * (t / 2);
       return 0.7;
     case "bleed":
       return Math.exp(Math.log(0.6) * Math.min(1, day / Math.max(1, p.sim.horizonDays)));

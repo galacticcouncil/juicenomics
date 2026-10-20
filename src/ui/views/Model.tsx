@@ -44,6 +44,7 @@ break-even 365 · c · L / s                      = ${r.breakEven.entryDays.toFi
           <li>Path effects: arb inventory running dry, deposit stops, stalls, pool premium recapture between rebalances. Use the Simulation tab.</li>
           <li>Harvest and Main-interest servicing swaps are a flat cost per harvested dollar.</li>
           <li>Changes in the HOLLAR rate driven by utilisation.</li>
+          <li>The execution-cost allowance: once the entry hole is repaid the loop keeps about allowance × L (≈ 160 bps of principal on Lark 4) as unharvested surplus. It cushions later costs and is held in USD, so in the Monte Carlo it lifts collateral-unit APR when collateral falls and trims it when collateral rises.</li>
         </ul>
       </div>
     </div>

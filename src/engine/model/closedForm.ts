@@ -2,6 +2,9 @@ import type { Params, VaultKey } from "../params/types";
 import { bands, type BandResult } from "./bands";
 import { costs, type CostBreakdown } from "./costs";
 
+/** how much of the pool-aware churn saving survives as rebalances grow against pool 143 */
+export const NETTING = { floor: 0.2, base: 1.2, div: 24 };
+
 export interface Leverage {
   L: number;
   hfEff: number;
@@ -63,6 +66,7 @@ export interface VaultResult {
 export interface ClosedResult {
   lev: Leverage;
   rates: { y: number; rMain: number; rLoop: number; spread: number };
+  scale: { eventUsd: number; depthUsd: number; netting: number };
   costs: CostBreakdown;
   vaults: Record<VaultKey, VaultResult>;
   breakEven: { entryDays: number; roundTripDays: number };
@@ -127,11 +131,25 @@ export function evaluate(p: Params): ClosedResult {
   }
   // buys and sells that meet in pool 143 only pay the round trip; the excess pays the arb's band
   const rt = c.roundTripBps / 1e4;
+  // netting works while one rebalance is small against pool 143; big ones push past the arb's band
+  // (fitted to the Monte Carlo at 1-50x Lark 4's TVL)
+  const depthUsd = p.pool.prime * p.market.primePrice + p.pool.hollar;
+  const eventUsd = KEYS.reduce((a, k) => {
+    const br = bandRes[k];
+    const t = tvl(k);
+    const ev = br.eventsPerYear > 0 ? (br.releverPerYear + br.deleverPerYear) / br.eventsPerYear : 0;
+    return a + L * ev * t;
+  }, 0) / KEYS.length;
+  const netting = Math.min(1, NETTING.floor + (NETTING.base - NETTING.floor) / (1 + eventUsd / Math.max(1, depthUsd / NETTING.div)));
   const tradingCost = (entry: number, unwind: number) => {
-    if (p.costs.churnModel === "constant") return entry * cE + unwind * cU;
+    const constant = entry * cE + unwind * cU;
+    if (p.costs.churnModel === "constant") return constant;
     const matched = Math.min(entry, unwind);
-    return matched * rt + (entry - matched) * cE + (unwind - matched) * cU;
+    const pooled = matched * rt + (entry - matched) * cE + (unwind - matched) * cU;
+    return netting * pooled + (1 - netting) * constant;
   };
+  const arbCapacityUsd = p.arb.inventoryPrime * p.market.primePrice + (p.improvements.desk ? p.improvements.deskPrime * p.market.primePrice : 0);
+  if (eventUsd > arbCapacityUsd) issues.push(`a typical rebalance (${Math.round(eventUsd / 1000)}k of PRIME) exceeds the arb's and desk's inventory: expect stalls`);
   const pooled = p.improvements.attribution === "pooled";
   const totalEntry = KEYS.reduce((a, k) => a + vol[k].entry, 0);
   const totalUnwind = KEYS.reduce((a, k) => a + vol[k].unwind, 0);
@@ -254,6 +272,7 @@ export function evaluate(p: Params): ClosedResult {
   return {
     lev,
     rates: { y, rMain, rLoop, spread },
+    scale: { eventUsd, depthUsd, netting },
     costs: c,
     vaults,
     breakEven: { entryDays, roundTripDays },

@@ -1,8 +1,8 @@
 import type { Params } from "./types";
 
 export type Unit = "pct" | "bps" | "usd" | "x" | "days" | "hours" | "units" | "num" | "price" | "minutes";
-export type Lever = "admin" | "ops" | "contract" | "market" | "model";
-export type Group = "market" | "loop" | "vaults" | "pool" | "fees" | "improvements" | "flows" | "sim";
+export type Lever = "admin" | "ops" | "contract" | "market" | "model" | "state";
+export type Group = "state" | "market" | "loop" | "vaults" | "pool" | "fees" | "improvements" | "flows" | "sim";
 
 export interface ParamDef {
   path: string;
@@ -31,6 +31,7 @@ export const GROUPS: { key: Group; label: string }[] = [
   { key: "improvements", label: "Improvements" },
   { key: "flows", label: "User flows" },
   { key: "sim", label: "Simulation" },
+  { key: "state", label: "Starting state (chain)" },
 ];
 
 const n = (d: Omit<ParamDef, "kind">): ParamDef => ({ kind: "number", ...d });
@@ -61,7 +62,8 @@ export const PARAMS: ParamDef[] = [
   n({ path: "market.primePrice", code: "pp", group: "market", label: "PRIME price", unit: "price", min: 0.5, max: 2, step: 0.0001, lever: "market", scope: "both", help: "PRIME oracle price at start", source: "AaveOracle" }),
   n({ path: "market.corr", code: "co", group: "market", label: "BTC/ETH correlation", unit: "num", min: -1, max: 1, step: 0.05, lever: "market", scope: "mc", help: "correlation of the collateral price paths (0.87 over the last year of daily oracle prices)" }),
   e({ path: "market.pathModel", code: "pm", group: "market", label: "Price paths", options: [{ value: "gbm", label: "random (GBM)" }, { value: "historical", label: "last year replay" }, { value: "bootstrap", label: "bootstrap of last year" }], lever: "model", scope: "mc", help: "how collateral price paths are generated" }),
-  e({ path: "market.stress", code: "st", group: "market", label: "Stress overlay", options: [{ value: "none", label: "none" }, { value: "v20", label: "−20% then +20%" }, { value: "crash30", label: "−30% in 48 h" }, { value: "bleed", label: "slow bleed −40%" }, { value: "oracleStep", label: "PRIME oracle −1% step" }, { value: "negCarry", label: "PRIME yield < HOLLAR rate" }, { value: "depeg", label: "HOLLAR −2% depeg" }], lever: "model", scope: "mc", help: "deterministic shock applied on top of the paths" }),
+  e({ path: "market.stress", code: "st", group: "market", label: "Stress overlay", options: [{ value: "none", label: "none" }, { value: "v20", label: "−20% then +20%" }, { value: "crash30", label: "−30% in 48 h" }, { value: "bleed", label: "slow bleed −40%" }, { value: "oracleStep", label: "PRIME oracle −1% step" }, { value: "negCarry", label: "PRIME yield < HOLLAR rate" }], lever: "model", scope: "mc", help: "deterministic shock applied on top of the paths" }),
+  n({ path: "market.stressDay", code: "sT", group: "market", label: "Stress starts on day", unit: "days", min: 0, max: 720, step: 1, lever: "model", scope: "mc", help: "when the shock begins; a crash while the entry hole is still open hits much harder than one after it closes" }),
   b({ path: "market.jumps", code: "ju", group: "market", label: "Price jumps", lever: "model", scope: "mc", help: "add occasional ±8% jumps" }),
   n({ path: "market.monitorMinutes", code: "mo", group: "market", label: "Rebalance monitoring", unit: "minutes", min: 1, max: 1440, step: 1, log: true, lever: "ops", scope: "both", help: "how often price moves are seen by the rebalance check (oracle updates and keeper cadence)" }),
   // loop
@@ -89,7 +91,8 @@ export const PARAMS: ParamDef[] = [
   n({ path: "arb.tradeUsd", code: "at", group: "pool", label: "Arb cycle size", unit: "usd", min: 1000, max: 1_000_000, step: 1000, log: true, lever: "market", scope: "both", help: "size of one arb refill cycle" }),
   n({ path: "arb.marginBps", code: "aM", group: "pool", label: "Arb margin", unit: "bps", min: 0, max: 20, step: 0.1, lever: "market", scope: "both", help: "profit a realistic arb wants on top of its costs" }),
   n({ path: "arb.inventoryPrime", code: "ai", group: "pool", label: "Arb PRIME inventory", unit: "units", min: 0, max: 50_000_000, step: 1000, log: true, lever: "market", scope: "mc", help: "PRIME the arb can sell before it needs a refill" }),
-  n({ path: "arb.refillHours", code: "aR", group: "pool", label: "Arb refill delay", unit: "hours", min: 0, max: 720, step: 1, lever: "market", scope: "mc", help: "hours until an empty arb is restocked (0 = never runs dry)" }),
+  n({ path: "arb.inventoryHollar", code: "aH", group: "pool", label: "Arb HOLLAR inventory", unit: "units", min: 0, max: 50_000_000, step: 1000, log: true, lever: "market", scope: "mc", help: "HOLLAR the arb can spend buying PRIME back when the pool is cheap (mainnet buyers absorbed the treasury's 943k PRIME within ~4 bps)" }),
+  n({ path: "arb.refillHours", code: "aR", group: "pool", label: "Arb refill delay", unit: "hours", min: 0, max: 720, step: 1, lever: "market", scope: "mc", help: "hours until the arb restocks a side that ran dry (0 = never restocks)" }),
   // costs
   e({ path: "costs.mode", code: "cm", group: "pool", label: "Trading costs", options: [{ value: "derived", label: "derived from pool & arb" }, { value: "manual", label: "manual" }], lever: "model", scope: "both", help: "derived: entry = arb band + 2·fee + impact + solver; unwind = band-dependent + 1.7·fee" }),
   n({ path: "costs.entryBps", code: "ce", group: "pool", label: "Entry cost (manual)", unit: "bps", min: 0, max: 200, step: 0.1, lever: "model", scope: "both", help: "cost of buying PRIME vs the oracle (Lark measured 24.5)" }),
@@ -110,6 +113,7 @@ export const PARAMS: ParamDef[] = [
   n({ path: "policy.resumeBps", code: "pR", group: "fees", label: "Keeper deposit resume", unit: "bps", min: 0, max: 2000, step: 5, lever: "ops", scope: "mc", help: "keepers clear deficitStop below this" }),
   n({ path: "policy.cooldownHours", code: "pc", group: "fees", label: "Withdrawal cooldown", unit: "hours", min: 0, max: 720, step: 0.25, lever: "admin", scope: "mc", help: "CollateralVault.withdrawalDelay (Lark 60 s, mainnet proposal 12 h)" }),
   n({ path: "policy.harvestThresholdBps", code: "pH", group: "fees", label: "Harvest threshold", unit: "bps", min: 0, max: 500, step: 0.5, lever: "admin", scope: "mc", help: "harvest when equity exceeds principal by this" }),
+  n({ path: "policy.costReserveBps", code: "cR", group: "fees", label: "Execution-cost allowance", unit: "bps", min: 0, max: 200, step: 0.5, lever: "admin", scope: "mc", help: "the loop keeps this share of its gross aPRIME as unharvested surplus against execution losses; harvest pays out only above it (≈ ×L in bps of principal)", source: "SubLoop.dcaSlippagePpm" }),
   // improvements
   b({ path: "improvements.desk", code: "Id", group: "improvements", label: "Treasury PRIME desk", lever: "ops", scope: "both", help: "the treasury sells PRIME to the loop near the oracle instead of outside arbs" }),
   e({ path: "improvements.deskMode", code: "Im", group: "improvements", label: "Desk mode", options: [{ value: "peg", label: "holds pool 143 at the oracle" }, { value: "direct", label: "fills loop intents directly" }], lever: "ops", scope: "both", help: "peg: entries pay only their own pool fee; direct: no pool, only the spread" }),
@@ -130,7 +134,19 @@ export const PARAMS: ParamDef[] = [
   n({ path: "sim.paths", code: "sp", group: "sim", label: "Paths", unit: "num", min: 1, max: 2000, step: 1, log: true, lever: "model", scope: "mc", help: "Monte Carlo paths" }),
   n({ path: "sim.seed", code: "sd", group: "sim", label: "Seed", unit: "num", min: 1, max: 1_000_000, step: 1, lever: "model", scope: "mc", help: "random seed (results reproduce)" }),
   e({ path: "sim.poolMode", code: "sP", group: "sim", label: "Pool math", options: [{ value: "fast", label: "fast float mirror" }, { value: "exact", label: "exact wasm" }], lever: "model", scope: "mc", help: "exact uses Hydration's stableswap wasm (slower)" }),
-  e({ path: "sim.initial", code: "si", group: "sim", label: "Start from", options: [{ value: "lark4", label: "Lark 4 today" }, { value: "fresh", label: "fresh launch (ramp from zero)" }], lever: "model", scope: "mc", help: "fresh includes the initial ramp and its entry costs" }),
+  e({ path: "sim.initial", code: "si", group: "sim", label: "Start from", options: [{ value: "lark4", label: "current state (snapshot or live)" }, { value: "fresh", label: "fresh launch (ramp from zero)" }], lever: "model", scope: "mc", help: "current state projects forward from the loaded chain state; fresh includes the initial ramp and its entry costs" }),
+  n({ path: "sim.stateBlock", code: "sb", group: "state", label: "State from block", unit: "num", min: 0, max: 1e9, step: 1, lever: "model", scope: "both", help: "EVM block the loop, vault and pool state was read at (build-time snapshot or a live load)" }),
+  n({ path: "loop.collateralUsd", code: "Lc", group: "state", label: "Loop collateral", unit: "usd", min: 0, max: 1e10, step: 0.01, lever: "state", scope: "both", help: "aPRIME the loop holds, in USD", source: "Aave getUserAccountData(SubLoop)" }),
+  n({ path: "loop.debtUsd", code: "Ld", group: "state", label: "Loop HOLLAR debt", unit: "usd", min: 0, max: 1e10, step: 0.01, lever: "state", scope: "both", help: "HOLLAR the loop owes", source: "Aave getUserAccountData(SubLoop)" }),
+  ...(["eth", "btc"] as const).flatMap((k) => {
+    const t = k === "eth" ? "e" : "b";
+    const nm = k === "eth" ? "jETH" : "jBTC";
+    return [
+      n({ path: `vaults.${k}.mainDebt`, code: `${t}D`, group: "state", label: `${nm} Main debt`, unit: "usd", min: 0, max: 1e10, step: 0.01, lever: "state", scope: "both", help: "HOLLAR the vault borrowed against its collateral", source: "JuicerMainDebt.activePosition" }),
+      n({ path: `vaults.${k}.loopPrincipal`, code: `${t}P`, group: "state", label: `${nm} loop principal`, unit: "usd", min: 0, max: 1e10, step: 0.01, lever: "state", scope: "both", help: "HOLLAR the vault put into the loop", source: "SubLoop.principalOf" }),
+      n({ path: `vaults.${k}.loopEquityUsd`, code: `${t}E`, group: "state", label: `${nm} loop equity`, unit: "usd", min: 0, max: 1e10, step: 0.01, lever: "state", scope: "both", help: "what the vault's loop share is worth now", source: "SubLoop.equityOf" }),
+    ];
+  }),
   ...vaultDefs("eth", "e", "GIGAETH"),
   ...vaultDefs("btc", "b", "tBTC"),
 ];

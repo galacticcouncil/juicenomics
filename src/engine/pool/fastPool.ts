@@ -50,11 +50,16 @@ export function quote(s: PoolState, side: 0 | 1, amountIn: number): number {
   if (side === 0) {
     const y = solveY(xp + amountIn * s.peg, d, s.amp);
     out = xh - y;
+    if (!(y > 0)) return 0;
   } else {
     const y = solveY(xh + amountIn, d, s.amp);
     out = (xp - y) / s.peg;
+    if (!(y > 0)) return 0;
   }
-  return Math.max(0, out * (1 - s.fee));
+  // the pool can never pay out its whole reserve
+  const reserve = side === 0 ? s.hollar : s.prime;
+  if (!Number.isFinite(out) || out <= 0) return 0;
+  return Math.min(out, reserve * 0.999) * (1 - s.fee);
 }
 
 export function apply(s: PoolState, side: 0 | 1, amountIn: number): number {

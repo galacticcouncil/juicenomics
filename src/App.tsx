@@ -13,6 +13,7 @@ import { Explore } from "./ui/views/Explore";
 import { Model } from "./ui/views/Model";
 import { Simulation } from "./ui/views/Simulation";
 import { useMonteCarlo } from "./ui/useMonteCarlo";
+import { LiveLoader } from "./ui/LiveLoader";
 
 type Tab = "overview" | "simulation" | "explore" | "compare" | "model";
 const TABS: { key: Tab; label: string }[] = [
@@ -117,6 +118,8 @@ export default function App() {
         </span>
         {B && <button onClick={() => { setB(null); setSide("A"); }} title="drop scenario B">✕ B</button>}
         <button onClick={() => setCur(clone(LARK4))} title={`Lark 4 at block ${SNAPSHOT.evmBlock}`}>reset to Lark 4</button>
+        <LiveLoader p={cur} onApply={setCur} onLoaded={setBanner} />
+        <span className="muted small" title="block the starting state comes from">state @ {cur.sim.stateBlock.toLocaleString("en-US")}{cur.sim.stateBlock === SNAPSHOT.evmBlock ? " (snapshot)" : " (live)"}</span>
         <span className="spacer" />
         <select value={theme} onChange={(e) => setTheme(e.target.value as "auto" | "light" | "dark")} title="theme">
           <option value="auto">system theme</option>

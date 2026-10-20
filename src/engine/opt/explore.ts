@@ -43,7 +43,7 @@ const pathKnob = (path: string, min?: number, max?: number): Knob => {
     unit: d.kind === "bool" ? "bool" : d.unit === "pct" ? "pct" : d.unit === "bps" ? "bps" : d.unit === "x" ? "x" : "num",
     min: min ?? d.min ?? 0,
     max: max ?? d.max ?? 1,
-    lever: d.lever === "model" ? "market" : d.lever,
+    lever: d.lever === "model" || d.lever === "state" ? "market" : d.lever,
     get: (p) => {
       const v = getPath(p, path);
       return typeof v === "boolean" ? (v ? 1 : 0) : (v as number);

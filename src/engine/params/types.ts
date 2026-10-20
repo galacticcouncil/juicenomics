@@ -23,7 +23,7 @@ export interface VaultParams {
 }
 
 export type PathModel = "gbm" | "historical" | "bootstrap";
-export type Stress = "none" | "v20" | "crash30" | "bleed" | "oracleStep" | "negCarry" | "depeg";
+export type Stress = "none" | "v20" | "crash30" | "bleed" | "oracleStep" | "negCarry";
 
 export interface Params {
   v: 1;
@@ -35,6 +35,7 @@ export interface Params {
     corr: number;
     pathModel: PathModel;
     stress: Stress;
+    stressDay: number;
     jumps: boolean;
     monitorMinutes: number;
   };
@@ -109,6 +110,7 @@ export interface Params {
     resumeBps: number;
     cooldownHours: number;
     harvestThresholdBps: number;
+    costReserveBps: number;
   };
   flows: {
     growth: "none" | "linear" | "exp";
@@ -123,5 +125,6 @@ export interface Params {
     seed: number;
     poolMode: "fast" | "exact";
     initial: "lark4" | "fresh";
+    stateBlock: number;
   };
 }

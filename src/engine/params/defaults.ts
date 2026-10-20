@@ -36,6 +36,7 @@ export const LARK4: Params = Object.freeze({
     corr: 0.87,
     pathModel: "gbm",
     stress: "none",
+    stressDay: 20,
     jumps: false,
     monitorMinutes: 15,
   },
@@ -70,7 +71,7 @@ export const LARK4: Params = Object.freeze({
     tradeUsd: 10_000,
     marginBps: 0.5,
     inventoryPrime: 500_000,
-    inventoryHollar: 100_000,
+    inventoryHollar: 500_000,
     refillHours: 24,
   },
   costs: { mode: "derived", entryBps: 24.5, unwindBps: 8.5, harvestSwapBps: 20, churnModel: "pool" },
@@ -99,9 +100,10 @@ export const LARK4: Params = Object.freeze({
     resumeBps: 200,
     cooldownHours: v.eth.withdrawalDelay / 3600,
     harvestThresholdBps: lark4.loop.harvestThreshold * 1e4,
+    costReserveBps: lark4.loop.dcaSlippagePpm / 100,
   },
   flows: { growth: "none", growthFactor: 1, sizeMedianUsd: 5_000, sizeSigma: 1.2 },
-  sim: { horizonDays: 365, stepHours: 1, paths: 200, seed: 7, poolMode: "fast", initial: "lark4" },
+  sim: { horizonDays: 365, stepHours: 1, paths: 200, seed: 7, poolMode: "fast", initial: "lark4", stateBlock: lark4.evmBlock },
 }) as Params;
 
 export const SNAPSHOT = { evmBlock: lark4.evmBlock, timestamp: lark4.timestamp, source: lark4.source, pegs: lark4.pool143.pegs };

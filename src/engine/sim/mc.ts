@@ -47,6 +47,7 @@ export interface PathSummary {
   depositedUsd: number;
   withdrawnUsd: number;
   stallHours: number;
+  unwindStallHours: number;
   arbDryHours: number;
   releversEth: number;
   deleversEth: number;
@@ -135,7 +136,7 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
     entryCost: 0, unwindCost: 0, harvestCost: 0, solver: 0, arbGross: 0, arbOtherLeg: 0,
     blockedUsd: 0, depositedUsd: 0, withdrawnUsd: 0, entryVolume: 0, unwindVolume: 0, userEarnedUsd: 0,
   };
-  const counts = { stallSteps: 0, arbDrySteps: 0, stopSteps: { eth: 0, btc: 0 }, relevers: { eth: 0, btc: 0 }, delevers: { eth: 0, btc: 0 }, minHf: Infinity, maxDef: 0 };
+  const counts = { stallSteps: 0, unwindStallSteps: 0, arbDrySteps: 0, stopSteps: { eth: 0, btc: 0 }, relevers: { eth: 0, btc: 0 }, delevers: { eth: 0, btc: 0 }, minHf: Infinity, maxDef: 0 };
 
   // loop
   let oracle = p.market.primePrice;
@@ -149,6 +150,7 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
   let arbPrime = p.arb.inventoryPrime;
   let arbHollar = p.arb.inventoryHollar;
   let arbEmptyAt = -1;
+  let arbHollarEmptyAt = -1;
   let deskPrime = desk.desk ? desk.deskPrime : 0;
   let deskHollar = 0;
   let budgetIn = p.loop.budgetCap;
@@ -246,7 +248,7 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
         arbHollar += h;
         ledger.arbGross += h - s * oracle;
         ledger.arbOtherLeg += otherLegRate * s * oracle;
-        if (arbPrime < 1 && arbEmptyAt < 0) arbEmptyAt = t;
+        if (arbPrime < p.arb.inventoryPrime * 0.05 && arbEmptyAt < 0) arbEmptyAt = t;
       }
     }
     const buy = edge(1);
@@ -258,6 +260,7 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
         arbHollar -= x;
         arbPrime += out;
         ledger.arbGross += out * oracle - x;
+        if (arbHollar < p.arb.inventoryHollar * 0.05 && arbHollarEmptyAt < 0) arbHollarEmptyAt = t;
       }
     }
   };
@@ -353,7 +356,7 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
     vaults.eth.P *= Math.exp(paths.eth[i]) * sf;
     vaults.btc.P *= Math.exp(paths.btc[i]) * sf;
     oracle *= Math.exp(yNav * dt);
-    if (p.market.stress === "oracleStep" && i === 20 * stepsPerDay) oracle *= 0.99;
+    if (p.market.stress === "oracleStep" && i === Math.round(p.market.stressDay * stepsPerDay)) oracle *= 0.99;
     pools.peg = oracle;
 
     // 2. accrue
@@ -373,12 +376,15 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
     }
     budgetIn = Math.min(p.loop.budgetCap + p.loop.budgetRefillPerSec * 3600 * stepH, budgetIn + p.loop.budgetRefillPerSec * 3600 * stepH);
     budgetOut = Math.min(p.loop.budgetCap + p.loop.budgetRefillPerSec * 3600 * stepH, budgetOut + p.loop.budgetRefillPerSec * 3600 * stepH);
-    if (arbEmptyAt >= 0) {
-      counts.arbDrySteps++;
-      if (p.arb.refillHours > 0 && t - arbEmptyAt >= p.arb.refillHours) {
-        arbPrime = p.arb.inventoryPrime;
-        arbEmptyAt = -1;
-      }
+    // the arb restocks whichever side ran dry, after its refill delay
+    if (arbEmptyAt >= 0 || arbHollarEmptyAt >= 0) counts.arbDrySteps++;
+    if (arbEmptyAt >= 0 && p.arb.refillHours > 0 && t - arbEmptyAt >= p.arb.refillHours) {
+      arbPrime = Math.max(arbPrime, p.arb.inventoryPrime);
+      arbEmptyAt = -1;
+    }
+    if (arbHollarEmptyAt >= 0 && p.arb.refillHours > 0 && t - arbHollarEmptyAt >= p.arb.refillHours) {
+      arbHollar = Math.max(arbHollar, p.arb.inventoryHollar);
+      arbHollarEmptyAt = -1;
     }
 
     // 3. flows
@@ -448,14 +454,22 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
       if (equity <= 0) finishExit({ vault: x.vault, kind: "exit", owed: 0, freed: 0, charged: 0, allowance: 0, debtShare, collateralOwed, cohortShares: x.cohortShares });
     }
 
-    // 4. harvest surplus above principal into collateral
-    if (!requests.length) {
+    // 4. harvest the loop-wide surplus above principal into collateral; queued unwinds keep their
+    // reserved equity (eps nets `owed`) but don't block it, as in SubLoop._harvestable
+    {
       const e = eps();
+      const principalAll = vaults.eth.principal + vaults.btc.principal;
+      const owned = KEYS.map((k) => Math.max(0, vaults[k].loopShares * e - vaults[k].principal));
+      const weight = owned.reduce((a, b) => a + b, 0);
+      // SubLoop.executionCostReserve: a slice of the gross aPRIME stays as earned surplus
+      const available = totalShares * e - principalAll - A * oracle * (p.policy.costReserveBps / 1e4);
+      const open = available > principalAll * (p.policy.harvestThresholdBps / 1e4) && available > 0.01 && weight > 0;
+      const capacity = open ? Math.min(available, weight) : 0;
       let harvested = 0;
-      for (const k of KEYS) {
+      for (const [i, k] of KEYS.entries()) {
         const v = vaults[k];
-        const surplus = v.loopShares * e - v.principal;
-        if (surplus > v.principal * (p.policy.harvestThresholdBps / 1e4) && surplus > 0.01) {
+        const surplus = capacity > 0 ? (capacity * owned[i]) / weight : 0;
+        if (surplus > 0.01) {
           v.loopShares -= surplus / e;
           totalShares -= surplus / e;
           harvested += surplus;
@@ -527,7 +541,14 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
       const position = A * oracle - B;
       const Lcur = position > 0 ? (A * oracle) / position : Lt;
       const s = Math.min(A, (need * Lcur) / oracle, p.loop.tranche / oracle, budgetOut / oracle);
-      const h = sellPrime(s);
+      // unwinds go through the same capped lane as entries
+      const direct = desk.desk && desk.deskMode === "direct" && desk.deskBid && deskHollar >= s * oracle;
+      const hq = (direct ? s * oracle * (1 - desk.deskSpreadBps / 1e4) : pool.quote(0, s)) * (1 - solver);
+      if ((1 - hq / (s * oracle)) * 1e4 > p.loop.laneCapBps) {
+        counts.unwindStallSteps++;
+        break;
+      }
+      const h = sellPrime(s) * (1 - solver);
       budgetOut -= s * oracle;
       ledger.unwindVolume += s * oracle;
       A -= s;
@@ -591,7 +612,8 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
     if (hf() < hfT - 0.02 && A > 0) {
       const target = (B - (A * oracle * LT) / hfT) / (1 - LT / hfT);
       const s = Math.min(A, Math.max(0, target) / oracle);
-      if (s > 0) {
+      const capped = s > 0 && (1 - pool.quote(0, s) / (s * oracle)) * 1e4 > p.loop.laneCapBps && hf() > 1.02;
+      if (s > 0 && !capped) {
         const h = sellPrime(s);
         A -= s;
         B = Math.max(0, B - h);
@@ -685,6 +707,7 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
     depositedUsd: ledger.depositedUsd,
     withdrawnUsd: ledger.withdrawnUsd,
     stallHours: counts.stallSteps * stepH,
+    unwindStallHours: counts.unwindStallSteps * stepH,
     arbDryHours: counts.arbDrySteps * stepH,
     releversEth: counts.relevers.eth / years,
     deleversEth: counts.delevers.eth / years,

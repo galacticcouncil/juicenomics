@@ -54,6 +54,7 @@ describe("monte carlo", () => {
   });
   it("with today's volatility the closed form tracks the simulation within ~0.6 pp", () => {
     const p = clone(LARK4);
+    p.policy.costReserveBps = 0;
     const runs = [0, 1, 2, 3].map((i) => runPath(p, i).summary);
     const mean = (f: (s: (typeof runs)[number]) => number) => runs.reduce((a, s) => a + f(s), 0) / runs.length;
     const cf = evaluate(p);
@@ -77,5 +78,54 @@ describe("monte carlo", () => {
     p.vaults.eth.vol = 0;
     p.vaults.btc.vol = 0;
     expect(runPath(p, 0).summary.stallHours).toBeGreaterThan(24);
+  });
+});
+
+describe("scale", () => {
+  it("APR falls as TVL outgrows pool 143, in both engines", () => {
+    const at = (m: number) => {
+      const p = clone(LARK4);
+      p.sim.horizonDays = 120;
+      for (const k of ["eth", "btc"] as const) {
+        p.vaults[k].units *= m; p.vaults[k].mainDebt *= m; p.vaults[k].loopPrincipal *= m; p.vaults[k].loopEquityUsd *= m; p.vaults[k].tvlCap = 1e9;
+      }
+      p.loop.collateralUsd *= m;
+      p.loop.debtUsd *= m;
+      return { cf: evaluate(p).vaults.btc.net, mc: runPath(p, 1).summary };
+    };
+    const small = at(1);
+    const big = at(20);
+    expect(big.cf).toBeLessThan(small.cf - 0.003);
+    expect(big.mc.aprBtc).toBeLessThan(small.mc.aprBtc);
+    expect(big.mc.minHf).toBeGreaterThan(1);
+    expect(big.mc.entryAvgBps).toBeLessThan(40);
+  });
+});
+
+describe("harvest", () => {
+  it("keeps harvesting while exits are queued", () => {
+    const p = clone(LARK4);
+    p.sim.horizonDays = 150;
+    p.flows.growth = "exp";
+    p.flows.growthFactor = 10;
+    p.policy.costReserveBps = 0;
+    for (const k of ["eth", "btc"] as const) { p.vaults[k].tvlCap = 1e9; p.vaults[k].outflowRate = 0.3; }
+    expect(runPath(p, 0).summary.endLoopDeficitBps).toBeGreaterThan(-30);
+  });
+  it("keeps the execution-cost allowance as surplus, about allowance × L", () => {
+    const p = clone(LARK4);
+    p.vaults.eth.vol = 0;
+    p.vaults.btc.vol = 0;
+    const end = runPath(p, 0).summary.endLoopDeficitBps;
+    expect(end).toBeLessThan(-0.8 * p.policy.costReserveBps * 6);
+    expect(end).toBeGreaterThan(-1.2 * p.policy.costReserveBps * 6);
+  });
+  it("a crash hurts while the entry hole is open, not after", () => {
+    const p = clone(LARK4);
+    p.sim.horizonDays = 240;
+    p.market.stress = "crash30";
+    const stop = (day: number) => { p.market.stressDay = day; const s = runPath(p, 3).summary; return s.stopHoursEth + s.stopHoursBtc; };
+    expect(stop(150)).toBe(0);
+    expect(stop(10)).toBeGreaterThan(stop(150));
   });
 });

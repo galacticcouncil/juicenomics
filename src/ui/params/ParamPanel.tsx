@@ -7,6 +7,7 @@ import { fmtNum, fromDisplay, toDisplay, unitLabel } from "../fmt";
 // fields that only matter in some modes
 const VISIBLE: Record<string, (p: Params) => boolean> = {
   "loop.targetHf": (p) => p.loop.mode === "hf",
+  "market.stressDay": (p) => ["v20", "crash30", "oracleStep"].includes(p.market.stress),
   "loop.hfLag": (p) => p.loop.mode === "hf",
   "loop.leverage": (p) => p.loop.mode === "lev",
   "arb.sellBps": (p) => p.arb.mode === "fixed",
@@ -36,6 +37,7 @@ const LEVER: Record<string, { label: string; title: string }> = {
   contract: { label: "contract", title: "needs a contract change" },
   market: { label: "market", title: "market condition" },
   model: { label: "model", title: "modelling assumption" },
+  state: { label: "state", title: "chain state the projection starts from" },
 };
 
 function changed(p: Params, d: ParamDef): boolean {

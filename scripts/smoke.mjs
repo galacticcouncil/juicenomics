@@ -54,6 +54,15 @@ check(simTiles.some((t) => /jBTC APR \(in tBTC\) −?\d/i.test(t)), `monte carlo
 const w = await wasmResponse;
 check(!!w && /application\/wasm/.test(w.headers()["content-type"] ?? ""), `wasm served as application/wasm (${w ? w.headers()["content-type"] : "not loaded"})`);
 await sim.page.screenshot({ path: `${OUT}simulation-run.png`, fullPage: true });
+// live state straight from lark 4 (the rpc has to allow cross-origin reads)
+const live = await open(ORIGIN);
+await live.page.click('button:has-text("load live state")');
+await live.page.click(".popover button.primary");
+const banner = await live.page.waitForSelector('.banner:has-text("live state from")', { timeout: 30000 }).catch(() => null);
+check(!!banner, `live state loads in the browser${banner ? `: ${(await banner.innerText()).slice(0, 120)}` : ""}`);
+check(/\(live\)/.test(await live.page.$eval("header", (e) => e.innerText)), "header shows the live block");
+check(/#s=1[zj]/.test(live.page.url()), "live state lands in the share link");
+await live.page.screenshot({ path: `${OUT}overview-live.png`, fullPage: true });
 const dark = await open(ORIGIN, "dark");
 await dark.page.screenshot({ path: `${OUT}overview-dark.png`, fullPage: true });
 const wasm = await page.evaluate(async () => {
@@ -61,7 +70,7 @@ const wasm = await page.evaluate(async () => {
   return r.ok;
 });
 check(wasm, "index served");
-const allErrors = [...errors, ...again.errors, ...dark.errors, ...sim.errors];
+const allErrors = [...errors, ...again.errors, ...dark.errors, ...sim.errors, ...live.errors];
 check(allErrors.length === 0, `no console errors${allErrors.length ? `: ${allErrors.slice(0, 3).join(" | ")}` : ""}`);
 await browser.close();
 process.exit(results.some((r) => r.startsWith("FAIL")) ? 1 : 0);
