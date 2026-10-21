@@ -38,6 +38,8 @@ export interface Params {
     stressDay: number;
     jumps: boolean;
     monitorMinutes: number;
+    /** HOLLAR the Hydration Market facilitator can still mint */
+    hollarHeadroomUsd: number;
   };
   loop: {
     mode: "hf" | "lev";
@@ -124,7 +126,7 @@ export interface Params {
     paths: number;
     seed: number;
     poolMode: "fast" | "exact";
-    initial: "lark4" | "fresh";
+    initial: "lark4" | "fresh" | "ramped";
     stateBlock: number;
   };
 }

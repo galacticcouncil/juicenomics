@@ -88,9 +88,10 @@ export interface LiveState {
   notes: string[];
 }
 
-/** read the running chain at its head and build the settings that describe it */
-export async function loadLive(dep: Deployment, url = dep.rpc): Promise<LiveState> {
-  const head = (await rpc(url, { jsonrpc: "2.0", id: 1, method: "eth_getBlockByNumber", params: ["latest", false] })) as { result: { number: Hex; timestamp: Hex } };
+/** read the running chain at its head (or at an archived block) and build the settings that describe it */
+export async function loadLive(dep: Deployment, url = dep.rpc, at?: number): Promise<LiveState> {
+  const tag = at === undefined ? "latest" : `0x${at.toString(16)}`;
+  const head = (await rpc(url, { jsonrpc: "2.0", id: 1, method: "eth_getBlockByNumber", params: [tag, false] })) as { result: { number: Hex; timestamp: Hex } };
   const blockHex = head.result.number;
   const block = Number(blockHex);
   const timestamp = Number(head.result.timestamp);
@@ -126,10 +127,12 @@ export async function loadLive(dep: Deployment, url = dep.rpc): Promise<LiveStat
   const r = await ethCalls(url, calls, blockHex);
   const ledgers = keys.map((_, i) => r[10 + i * 9 + 5] as Hex);
   const positions = await ethCalls(url, ledgers.map((l) => ({ to: l, sig: "function activePosition() view returns (uint256,uint256,uint256)" })), blockHex);
-  // a batch may answer in any order
+  // pool storage at the same block as the eth_calls (frontier blocks map 1:1 to substrate blocks); a batch may answer in any order
+  const hashRes = ((await rpc(url, { jsonrpc: "2.0", id: 1, method: "chain_getBlockHash", params: [block] }).catch(() => null)) as { result?: unknown } | null)?.result;
+  const at_ = typeof hashRes === "string" ? [hashRes] : [];
   const storage = new Map(((await rpc(url, [
-    { jsonrpc: "2.0", id: 1, method: "state_getStorage", params: [POOL143_INFO_KEY] },
-    { jsonrpc: "2.0", id: 2, method: "state_getStorage", params: [POOL143_PRIME_KEY] },
+    { jsonrpc: "2.0", id: 1, method: "state_getStorage", params: [POOL143_INFO_KEY, ...at_] },
+    { jsonrpc: "2.0", id: 2, method: "state_getStorage", params: [POOL143_PRIME_KEY, ...at_] },
   ])) as { id: number; result: string | null }[]).map((x) => [x.id, x]));
   const info = storage.get(1);
   const primeRes = storage.get(2);

@@ -135,6 +135,8 @@ export interface ClosedResult {
   lark4Now: { holeUsd: number; holeBps: number; holeMarketUsd: number };
   protocol: { hollarInterest: number; collateralFee: number; lpFees: number; depositFees: number; deskSpread: number; incentiveCost: number; total: number; inCollateralShare: number };
   external: { arbGross: number; arbOtherLeg: number; arbNet: number; solver: number };
+  /** HOLLAR Juicer borrows (loop + vaults) and pushes through pool 143: per $1 deposited, at steady state, sold at a fresh ramp, and per year */
+  hollar: { perDollar: number; debtUsd: number; rampSoldUsd: number; soldPerYear: number; boughtPerYear: number; headroomUsd: number; overHeadroom: boolean; maxTvlUsd: number };
   /** tvlUsd: today; avgTvlUsd / endTvlUsd: over the horizon (growth, withdrawals, caps), the base for $ per year */
   totals: { tvlUsd: number; avgTvlUsd: number; endTvlUsd: number; userNet: number; userAprWeighted: number; primeYieldPie: number; primeDemandUsd: number };
   issues: string[];
@@ -343,7 +345,13 @@ export function evaluate(p: Params): ClosedResult {
   const arbGross = (c.bandBps / 1e4) * arbVolume;
   const arbOtherLeg = (c.arbOtherLegBps / 1e4) * arbVolume;
   const userNet = KEYS.reduce((a, k) => a + vaults[k].usd.userNet, 0);
-  const holeUsd = p.vaults.eth.loopPrincipal + p.vaults.btc.loopPrincipal - (p.loop.collateralUsd - p.loop.debtUsd);
+  // every $1 a vault borrows from Main enters the loop, which borrows L − 1 more: all L of it is HOLLAR sold for PRIME
+  const hollarDebt = KEYS.reduce((a, k) => a + L * vaults[k].avgLtv * vaults[k].avgTvlUsd, 0);
+  const hollarPerDollar = growthPath.avgUsd > 0 ? hollarDebt / growthPath.avgUsd : 0;
+  const hollarPeak = Math.max(hollarDebt, KEYS.reduce((a, k) => a + L * p.vaults[k].bandTarget * Math.max(tvl(k), growthPath.vaults[k].endUsd), 0));
+  if (hollarPeak > p.market.hollarHeadroomUsd) issues.push(`Juicer would borrow ~$${Math.round(hollarPeak / 1e3)}k of HOLLAR, past the $${Math.round(p.market.hollarHeadroomUsd / 1e3)}k the facilitator can still mint`);
+  // equityOf includes HOLLAR still waiting to enter, so the hole doesn't jump while an entry is in flight
+  const holeUsd = p.vaults.eth.loopPrincipal + p.vaults.btc.loopPrincipal - Math.max(p.loop.collateralUsd - p.loop.debtUsd, p.vaults.eth.loopEquityUsd + p.vaults.btc.loopEquityUsd);
   const principal = p.vaults.eth.loopPrincipal + p.vaults.btc.loopPrincipal;
   const hollarShort = p.loop.debtUsd + p.vaults.eth.mainDebt + p.vaults.btc.mainDebt;
 
@@ -367,6 +375,16 @@ export function evaluate(p: Params): ClosedResult {
       holeMarketUsd: holeUsd - (1 - p.market.hollarMark) * hollarShort,
     },
     protocol: { hollarInterest, collateralFee, lpFees, depositFees, deskSpread, incentiveCost, total, inCollateralShare: total > 0 ? collateralFee / total : 0 },
+    hollar: {
+      perDollar: hollarPerDollar,
+      debtUsd: hollarDebt,
+      rampSoldUsd: p.sim.initial === "fresh" ? KEYS.reduce((a, k) => a + L * p.vaults[k].bandTarget * tvl(k), 0) : 0,
+      soldPerYear: KEYS.reduce((a, k) => a + vaults[k].usd.entryVolume, 0),
+      boughtPerYear: KEYS.reduce((a, k) => a + vaults[k].usd.unwindVolume, 0),
+      headroomUsd: p.market.hollarHeadroomUsd,
+      overHeadroom: hollarPeak > p.market.hollarHeadroomUsd,
+      maxTvlUsd: hollarPerDollar > 0 ? p.market.hollarHeadroomUsd / hollarPerDollar : Infinity,
+    },
     external: { arbGross, arbOtherLeg, arbNet: arbGross - arbOtherLeg, solver: (p.loop.solverBps / 1e4) * KEYS.reduce((a, k) => a + vaults[k].usd.entryVolume, 0) },
     totals: {
       tvlUsd: tvlTotal,

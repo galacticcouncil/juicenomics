@@ -1,4 +1,5 @@
 import { evaluate, type ClosedResult } from "../model/closedForm";
+import { LARK4 } from "../params/defaults";
 import { BY_PATH, getPath, setPath } from "../params/schema";
 import type { Params } from "../params/types";
 
@@ -63,7 +64,7 @@ const bothVaults = (key: string, label: string, min: number, max: number, get: (
 
 export const KNOBS: Knob[] = [
   {
-    key: "leverage", label: "Loop leverage", unit: "x", min: 1.5, max: 8, lever: "admin",
+    key: "leverage", label: "Loop leverage", unit: "x", min: 1.2, max: 8, lever: "admin",
     get: (p) => (p.loop.mode === "lev" ? p.loop.leverage : 1 / (1 - p.loop.primeLt / (p.loop.targetHf + p.loop.hfLag))),
     set: (p, v) => { p.loop.mode = "lev"; p.loop.leverage = v; },
   },
@@ -96,6 +97,17 @@ export const KNOBS: Knob[] = [
   pathKnob("vaults.btc.vol", 0.1, 1),
   pathKnob("vaults.eth.vol", 0.1, 1.2),
   pathKnob("market.monitorMinutes", 1, 240),
+  {
+    key: "pool.depth", label: "Pool 143 depth (× today)", unit: "x", min: 1, max: 10, lever: "ops",
+    get: (p) => p.pool.prime / LARK4.pool.prime,
+    set: (p, v) => { p.pool.prime = LARK4.pool.prime * v; p.pool.hollar = LARK4.pool.hollar * v; },
+  },
+  pathKnob("loop.tranche", 500, 25_000),
+  {
+    key: "attribution.own", label: "Own-cost attribution", unit: "bool", min: 0, max: 1, lever: "contract",
+    get: (p) => (p.improvements.attribution === "own" ? 1 : 0),
+    set: (p, v) => { p.improvements.attribution = v >= 0.5 ? "own" : "pooled"; },
+  },
 ];
 export const KNOB = new Map(KNOBS.map((k) => [k.key, k]));
 
@@ -164,6 +176,9 @@ export interface Constraints {
   noStall: boolean;
   noClose: boolean;
   minLiqDrop: number;
+  /** HOLLAR Juicer may owe (loop + vaults); and/or stay within the facilitator's mint headroom */
+  maxHollarUsd?: number;
+  withinHeadroom?: boolean;
 }
 
 export function feasibleWith(c: Constraints) {
@@ -174,6 +189,8 @@ export function feasibleWith(c: Constraints) {
     (!c.noStall || !r.costs.stall) &&
     (!c.noClose || !r.deficit.depositsClose) &&
     r.lev.liqDrop >= c.minLiqDrop &&
+    (c.maxHollarUsd === undefined || r.hollar.debtUsd <= c.maxHollarUsd) &&
+    (!c.withinHeadroom || !r.hollar.overHeadroom) &&
     r.lev.valid;
 }
 

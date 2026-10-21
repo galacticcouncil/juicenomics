@@ -39,6 +39,8 @@ export const LARK4: Params = Object.freeze({
     stressDay: 20,
     jumps: false,
     monitorMinutes: 15,
+    // mainnet facilitator bucket 13M, level 10.87M at EVM block 16,035,040 (21 Oct)
+    hollarHeadroomUsd: 2_131_869,
   },
   loop: {
     mode: "hf",

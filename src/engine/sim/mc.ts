@@ -59,6 +59,17 @@ export interface PathSummary {
   entryAvgBps: number;
   unwindAvgBps: number;
   userEarnedUsd: number;
+  /** HOLLAR side: debt the loop and vaults owe, HOLLAR the arbs collect from pool 143 and must sell, HOLLAR the desk keeps */
+  hollarDebtStartUsd: number;
+  hollarDebtEndUsd: number;
+  hollarDebtPeakUsd: number;
+  arbHollarNetUsd: number;
+  deskHollarNetUsd: number;
+  hollarFromUnwindsUsd: number;
+  /** depositor wealth change minus every recorded flow; ~0 when the books close */
+  conservationGapUsd: number;
+  primeYieldUsd: number;
+  priceGainUsd: number;
   cohorts: { vault: VaultKey; day: number; usd: number; apr: number; heldDays: number }[];
 }
 
@@ -147,6 +158,7 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
     hollarInterest: 0, collateralFee: 0, lpFees: 0, depositFees: 0, deskPnl: 0, incentiveCost: 0,
     entryCost: 0, unwindCost: 0, harvestCost: 0, solver: 0, arbGross: 0, arbOtherLeg: 0,
     blockedUsd: 0, depositedUsd: 0, withdrawnUsd: 0, entryVolume: 0, unwindVolume: 0, userEarnedUsd: 0,
+    primeYield: 0, incentiveYield: 0, priceGain: 0, arbHollarIn: 0, arbHollarOut: 0, deskHollarIn: 0, deskHollarOut: 0, hollarFromUnwinds: 0,
   };
   const counts = { stallSteps: 0, unwindStallSteps: 0, arbDrySteps: 0, stopSteps: { eth: 0, btc: 0 }, relevers: { eth: 0, btc: 0 }, delevers: { eth: 0, btc: 0 }, minHf: Infinity, maxDef: 0 };
 
@@ -177,11 +189,28 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
       newcomer: [], ramp: [], costAcc: 0,
     };
   }
-  if (p.sim.initial === "lark4") {
+  if (p.sim.initial === "ramped") {
+    // steady state: each vault at its target LTV, the loop at its target leverage, the entry hole already repaid
+    let eq = 0;
+    for (const k of KEYS) {
+      const v = vaults[k];
+      const d = p.vaults[k].bandTarget * v.Q * v.P;
+      v.D = d;
+      v.mainPrincipal = d;
+      v.principal = d;
+      v.loopShares = d;
+      eq += d;
+    }
+    totalShares = eq;
+    A = (Lt * eq) / oracle;
+    B = (Lt - 1) * eq;
+  } else if (p.sim.initial === "lark4") {
     A = p.loop.collateralUsd / oracle;
     B = p.loop.debtUsd;
-    const eq = A * oracle - B;
     const sum = p.vaults.eth.loopEquityUsd + p.vaults.btc.loopEquityUsd;
+    // equityOf counts HOLLAR still waiting to enter (cash, pending intents); the position doesn't
+    cash = Math.max(0, sum - (A * oracle - B));
+    const eq = A * oracle - B + cash;
     for (const k of KEYS) {
       vaults[k].D = p.vaults[k].mainDebt;
       vaults[k].mainPrincipal = p.vaults[k].mainDebt;
@@ -205,6 +234,17 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
     c.shares -= x;
     v.supply -= x;
   };
+  // everything depositors own, in $: collateral less Main debt, the whole loop, and exit claims in flight
+  const wealth = () => {
+    let w = A * oracle - B + cash;
+    for (const k of KEYS) w += vaults[k].Q * vaults[k].P - vaults[k].D;
+    for (const q of requests) if (q.kind === "exit") w += q.collateralOwed * vaults[q.vault].P + q.freed - q.debtShare;
+    return w;
+  };
+  const hollarDebt = () => B + vaults.eth.D + vaults.btc.D + requests.reduce((a, q) => a + (q.kind === "exit" ? q.debtShare : 0), 0);
+  const wealth0 = wealth();
+  const hollarDebt0 = hollarDebt();
+  let hollarDebtPeak = hollarDebt0;
   for (const k of KEYS) {
     vaults[k].nav0 = navUnits(vaults[k]);
     vaults[k].cohorts[0].units = vaults[k].cohorts[0].shares * vaults[k].nav0;
@@ -246,6 +286,7 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
           lpFee(h / (1 - pools.fee));
           deskPrime -= s;
           deskHollar += h;
+          ledger.deskHollarIn += h;
           ledger.deskPnl += h - s * oracle;
         }
       }
@@ -256,6 +297,7 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
           const out = pool.apply(1, x);
           lpFee((out / (1 - pools.fee)) * oracle);
           deskHollar -= x;
+          ledger.deskHollarOut += x;
           deskPrime += out;
           ledger.deskPnl += out * oracle - x;
         }
@@ -269,6 +311,7 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
         lpFee(h / (1 - pools.fee));
         arbPrime -= s;
         arbHollar += h;
+        ledger.arbHollarIn += h;
         ledger.arbGross += h - s * oracle;
         ledger.arbOtherLeg += otherLegRate * s * oracle;
         if (arbPrime < p.arb.inventoryPrime * 0.05 && arbEmptyAt < 0) arbEmptyAt = t;
@@ -281,6 +324,7 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
         const out = pool.apply(1, x);
         lpFee((out / (1 - pools.fee)) * oracle);
         arbHollar -= x;
+        ledger.arbHollarOut += x;
         arbPrime += out;
         ledger.arbGross += out * oracle - x;
         if (arbHollar < p.arb.inventoryHollar * 0.05 && arbHollarEmptyAt < 0) arbHollarEmptyAt = t;
@@ -293,6 +337,7 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
       const out = usd / (oracle * (1 + desk.deskSpreadBps / 1e4));
       deskPrime -= out;
       deskHollar += usd;
+      ledger.deskHollarIn += usd;
       ledger.deskPnl += usd - out * oracle;
       return out;
     }
@@ -304,6 +349,7 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
     if (desk.desk && desk.deskMode === "direct" && desk.deskBid && deskHollar >= s * oracle) {
       const h = s * oracle * (1 - desk.deskSpreadBps / 1e4);
       deskHollar -= h;
+      ledger.deskHollarOut += h;
       deskPrime += s;
       ledger.deskPnl += s * oracle - h;
       return h;
@@ -407,8 +453,14 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
     const sf = stressFactor(p, day) / stressFactor(p, Math.max(0, day - 1 / stepsPerDay));
     vaults.eth.P *= Math.exp(paths.eth[i]) * sf;
     vaults.btc.P *= Math.exp(paths.btc[i]) * sf;
+    for (const k of KEYS) {
+      const held = vaults[k].Q + requests.reduce((a, q) => a + (q.vault === k && q.kind === "exit" ? q.collateralOwed : 0), 0);
+      ledger.priceGain += held * (vaults[k].P - P0[k]);
+    }
+    const oracle0 = oracle;
     oracle *= Math.exp(yNav * dt);
     if (p.market.stress === "oracleStep" && i === Math.round(p.market.stressDay * stepsPerDay)) oracle *= 0.99;
+    ledger.primeYield += A * (oracle - oracle0);
     pools.peg = oracle;
 
     // 2. accrue
@@ -424,10 +476,12 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
         const grown = q.debtShare * (Math.exp(rMain * dt) - 1);
         q.debtShare += grown;
         q.interest += grown;
+        mainInt += grown;
       }
     }
     ledger.hollarInterest += loopInt + mainInt;
     if (inc > 0) {
+      ledger.incentiveYield += A * oracle * (Math.exp(inc * dt) - 1);
       A *= Math.exp(inc * dt);
       ledger.incentiveCost += (desk.incentiveScope === "blanket" ? Math.max(A, desk.blanketPrime) : A) * oracle * inc * dt;
     }
@@ -672,6 +726,7 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
         break;
       }
       const h = sellPrime(s) * (1 - solver);
+      ledger.hollarFromUnwinds += h;
       budgetOut -= s * oracle;
       ledger.unwindVolume += s * oracle;
       A -= s;
@@ -745,6 +800,7 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
       const capped = s > 0 && (1 - pool.quote(0, s) / (s * oracle)) * 1e4 > p.loop.laneCapBps && hf() > 1.02;
       if (s > 0 && !capped) {
         const h = sellPrime(s);
+        ledger.hollarFromUnwinds += h;
         A -= s;
         B = Math.max(0, B - h);
         ledger.unwindCost += s * oracle - h;
@@ -762,6 +818,7 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
       if (v.stop) counts.stopSteps[k]++;
     }
     counts.minHf = Math.min(counts.minHf, hf());
+    hollarDebtPeak = Math.max(hollarDebtPeak, hollarDebt());
     const principal = vaults.eth.principal + vaults.btc.principal;
     const loopDef = principal > 0 ? ((principal - (A * oracle - B + cash - owed)) / principal) * 1e4 : 0;
     counts.maxDef = Math.max(counts.maxDef, loopDef);
@@ -824,6 +881,8 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
     });
   });
 
+  const flows = ledger.depositedUsd - ledger.depositFees - ledger.withdrawnUsd;
+  const earned = ledger.primeYield + ledger.incentiveYield + ledger.priceGain - ledger.hollarInterest - ledger.entryCost - ledger.unwindCost - ledger.harvestCost - ledger.collateralFee;
   const summary: PathSummary = {
     aprEth: apr(vaults.eth),
     aprBtc: apr(vaults.btc),
@@ -860,6 +919,15 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
     entryAvgBps: ledger.entryVolume > 0 ? (ledger.entryCost / ledger.entryVolume) * 1e4 : 0,
     unwindAvgBps: ledger.unwindVolume > 0 ? (ledger.unwindCost / ledger.unwindVolume) * 1e4 : 0,
     userEarnedUsd: ledger.userEarnedUsd / years,
+    hollarDebtStartUsd: hollarDebt0,
+    hollarDebtEndUsd: hollarDebt(),
+    hollarDebtPeakUsd: hollarDebtPeak,
+    arbHollarNetUsd: ledger.arbHollarIn - ledger.arbHollarOut,
+    deskHollarNetUsd: ledger.deskHollarIn - ledger.deskHollarOut,
+    hollarFromUnwindsUsd: ledger.hollarFromUnwinds,
+    conservationGapUsd: wealth() - wealth0 - flows - earned,
+    primeYieldUsd: ledger.primeYield + ledger.incentiveYield,
+    priceGainUsd: ledger.priceGain,
     cohorts,
   };
   return { series, days, summary };
