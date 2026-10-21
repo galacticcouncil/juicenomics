@@ -62,6 +62,22 @@ await opt.page.waitForSelector('h3:has-text("Best found")', { timeout: 120000 })
 await opt.page.getByLabel("Solver cut", { exact: true }).check();
 await opt.page.waitForTimeout(300);
 check(opt.errors.length === 0 && (await opt.page.locator("h3:has-text('Best found')").count()) === 1, `optimizer results survive a settings change${opt.errors.length ? `: ${opt.errors[0]}` : ""}`);
+// a legacy comparison link: its default B keeps the start its era implied, and the rewritten url versions it
+{
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+  const legacyErrors = [];
+  page.on("pageerror", (e) => legacyErrors.push(String(e)));
+  const v1 = "1j" + Buffer.from(JSON.stringify({ pf: 2 })).toString("base64url");
+  await page.goto(`${ORIGIN}#s=${v1}&b=0&t=compare`, { waitUntil: "networkidle" });
+  await page.waitForSelector("h2:has-text('Settings that differ')", { timeout: 20000 });
+  const startRow = page.locator("tr").filter({ has: page.locator("td").filter({ hasText: /^Start from$/ }) });
+  check((await startRow.count()) === 0, "a legacy comparison link keeps both scenarios' start");
+  await page.waitForTimeout(800);
+  const b = new URLSearchParams(new URL(page.url()).hash.slice(1)).get("b");
+  check(!!b && b !== "0" && /^\d+[zj]/.test(b), `scenario B is written as a versioned token (${b})`);
+  check(legacyErrors.length === 0, `legacy link loads without errors${legacyErrors.length ? `: ${legacyErrors[0]}` : ""}`);
+  await page.close();
+}
 // live state straight from lark 4 (the rpc has to allow cross-origin reads)
 const live = await open(ORIGIN);
 await live.page.click('button:has-text("load live state")');

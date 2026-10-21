@@ -67,15 +67,19 @@ async function pipe(bytes: Uint8Array, stream: CompressionStream | Decompression
   return new Uint8Array(await out.arrayBuffer());
 }
 
-export async function encode(p: Params): Promise<string> {
+/** the empty string for the defaults, unless `always`: then a versioned token, so the defaults keep their version */
+export async function encode(p: Params, always = false): Promise<string> {
   const d = diff(p);
-  if (!Object.keys(d).length) return "";
+  if (!Object.keys(d).length) return always ? `${VERSION}j${b64(new TextEncoder().encode("{}"))}` : "";
   const json = new TextEncoder().encode(JSON.stringify(d));
   if (typeof CompressionStream !== "undefined") {
     return `${VERSION}z${b64(await pipe(json, new CompressionStream("deflate-raw")))}`;
   }
   return `${VERSION}j${b64(json)}`;
 }
+
+/** a version-1 link's defaults, for the unversioned "b=0" those links used for a default scenario B */
+export const LEGACY_DEFAULTS = `1j${b64(new TextEncoder().encode("{}"))}`;
 
 export async function decode(token: string): Promise<{ params: Params; ignored: string[]; clamped: string[]; error?: string }> {
   if (!token) return { params: clone(LARK4), ignored: [], clamped: [] };

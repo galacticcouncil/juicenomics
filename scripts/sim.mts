@@ -107,6 +107,8 @@ async function main() {
     return out(a, { error: d.error, ignored: d.ignored, clamped: d.clamped, diff: diff(d.params), params: flag(a, "full") ? d.params : undefined });
   }
 
+  // the live command always reads the chain; --live does the same for every other command
+  if (cmd === "live") a.flags.live = true;
   const { params, notes } = await buildParams(a);
   if (cmd === "link") return out(a, { link: await link(params), diff: diff(params), notes });
   if (cmd === "live") return out(a, { link: await link(params), diff: diff(params), notes, snapshotBlock: SNAPSHOT.evmBlock });
@@ -117,11 +119,13 @@ async function main() {
   if (cmd === "mc") {
     const p = structuredClone(params);
     if (flag(a, "horizon")) p.sim.horizonDays = num(a, "horizon", 365);
+    // one pool selection for the run, its metadata and its link
+    if (flag(a, "exact")) p.sim.poolMode = "exact";
     const paths = num(a, "paths", 64);
-    const run = await runMc(p, { paths, workers: flag(a, "workers") ? num(a, "workers", 1) : undefined, series: !!flag(a, "series"), exact: !!flag(a, "exact") });
+    const run = await runMc(p, { paths, workers: flag(a, "workers") ? num(a, "workers", 1) : undefined, series: !!flag(a, "series") });
     const fields = flag(a, "fields");
     return out(a, {
-      notes, link: await link(p), paths, days: run.days, ms: run.ms, pool: flag(a, "exact") ? "exact" : "fast",
+      notes, link: await link(p), paths, days: run.days, ms: run.ms, pool: p.sim.poolMode,
       mc: summarize(run.summaries, typeof fields === "string" ? fields.split(",") : undefined),
       cf: cfSummary(evaluate(p)),
       series: flag(a, "series") ? seriesBands(run.series, run.days) : undefined,

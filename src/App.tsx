@@ -5,7 +5,7 @@ import { PRESETS, preset } from "./engine/params/presets";
 import { setPath } from "./engine/params/schema";
 import type { Params } from "./engine/params/types";
 import { validate } from "./engine/params/validate";
-import { decode, encode } from "./engine/share/codec";
+import { LEGACY_DEFAULTS, decode, encode } from "./engine/share/codec";
 import { ParamPanel } from "./ui/params/ParamPanel";
 import { Overview } from "./ui/views/Overview";
 import { Compare } from "./ui/views/Compare";
@@ -51,7 +51,10 @@ export default function App() {
       if (a.clamped.length) notes.push(`clamped into range: ${a.clamped.join(", ")}`);
       setA(a.params);
       if (h.b) {
-        const b = await decode(h.b);
+        // "0" was the unversioned default-B marker: it means the defaults of the era its link came from
+        const era = Number.parseInt(h.s ?? "", 10);
+        const b = await decode(h.b === "0" ? (era === 1 ? LEGACY_DEFAULTS : "") : h.b);
+        if (b.error) notes.push(`could not read scenario B (${b.error}); showing Lark 4 defaults there`);
         setB(b.params);
       }
       if (notes.length) setBanner(notes.join(" · "));
@@ -70,10 +73,10 @@ export default function App() {
     if (!loaded.current) return;
     const id = setTimeout(async () => {
       const s = await encode(A);
-      const b = B ? await encode(B) : null;
+      const b = B ? await encode(B, true) : null;
       const q = new URLSearchParams();
       if (s) q.set("s", s);
-      if (B) q.set("b", b || "0");
+      if (B && b) q.set("b", b);
       if (tab !== "overview") q.set("t", tab);
       const hash = q.toString();
       history.replaceState(null, "", hash ? `#${hash}` : location.pathname + location.search);

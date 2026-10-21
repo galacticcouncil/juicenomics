@@ -111,6 +111,8 @@ interface Request {
   debtShare: number;
   // Main interest the claim carries: an exit's accrued slice, the interest share of a delever's repayments
   interest: number;
+  // execution costs the leaving shares bore since the vault's last harvest, for a fee on gross yield
+  costBasis: number;
   collateralOwed: number;
   cohortShares: { c: Cohort; shares: number }[];
 }
@@ -382,11 +384,14 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
     const burn = Math.min(v.loopShares, equity / e);
     const amount = burn * e;
     const basis = v.loopShares > 0 ? (v.principal * burn) / v.loopShares : 0;
+    // the leaving shares take their slice of the vault's unharvested cost basis, so it's charged once
+    const costBasis = v.loopShares > 0 ? (v.costAcc * burn) / v.loopShares : 0;
+    v.costAcc -= costBasis;
     v.loopShares -= burn;
     totalShares -= burn;
     v.principal -= basis;
     owed += amount;
-    requests.push({ vault: v.key, kind, owed: amount, freed: 0, charged: 0, allowance: Math.max(0, amount - basis), debtShare: 0, interest: 0, collateralOwed: 0, cohortShares: [], ...extra });
+    requests.push({ vault: v.key, kind, owed: amount, freed: 0, charged: 0, allowance: Math.max(0, amount - basis), debtShare: 0, interest: 0, costBasis, collateralOwed: 0, cohortShares: [], ...extra });
   };
   const repayMain = (v: Vault, amount: number) => {
     const x = Math.min(amount, v.D);
@@ -418,7 +423,7 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
     const earned = Math.max(0, q.allowance - q.charged);
     const base = p.fees.feeBase === "contract" ? earned
       : p.fees.feeBase === "yield" ? earned - q.interest
-      : Math.max(0, q.allowance) - q.interest;
+      : Math.max(0, q.allowance) + q.costBasis - q.interest;
     return Math.min(Math.max(0, q.owed - q.charged), Math.max(0, base) * fee);
   };
   const closeRequest = (q: Request) => {
@@ -568,7 +573,7 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
       v.supply -= x.shares;
       v.pendingExit -= x.shares;
       requestUnwind(v, equity, "exit", { debtShare, interest, collateralOwed, cohortShares: x.cohortShares });
-      if (equity <= 0) finishExit({ vault: x.vault, kind: "exit", owed: 0, freed: 0, charged: 0, allowance: 0, debtShare, interest, collateralOwed, cohortShares: x.cohortShares });
+      if (equity <= 0) finishExit({ vault: x.vault, kind: "exit", owed: 0, freed: 0, charged: 0, allowance: 0, debtShare, interest, costBasis: 0, collateralOwed, cohortShares: x.cohortShares });
     }
 
     // 4. harvest the loop-wide surplus above principal into collateral; queued unwinds keep their

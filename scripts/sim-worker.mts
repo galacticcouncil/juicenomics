@@ -8,7 +8,7 @@ parentPort!.on("message", (m: { params: Params; indices: number[]; series: boole
   try {
     // the package's node build; the browser loads the same wasm through vite
     const math = m.exact ? (createRequire(import.meta.url)("@galacticcouncil/math-stableswap/build/index.cjs") as StableswapWasm) : undefined;
-    const params = m.exact ? { ...m.params, sim: { ...m.params.sim, poolMode: "exact" as const } } : m.params;
+    const params = { ...m.params, sim: { ...m.params.sim, poolMode: m.exact ? ("exact" as const) : ("fast" as const) } };
     for (const i of m.indices) {
       const r = runPath(params, i, math);
       parentPort!.postMessage({ i, summary: r.summary, series: m.series ? r.series : undefined, days: r.days });

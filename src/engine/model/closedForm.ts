@@ -120,7 +120,7 @@ export interface VaultResult {
   deficitBps: number;
   waterfall: Step[];
   /** usd per year */
-  usd: { userNet: number; hollarInterest: number; collateralFee: number; churnCost: number; flowCost: number; primeYield: number; entryVolume: number; unwindVolume: number };
+  usd: { userNet: number; hollarInterest: number; collateralFee: number; churnCost: number; flowCost: number; depositFeeIn: number; primeYield: number; entryVolume: number; unwindVolume: number };
 }
 
 export interface ClosedResult {
@@ -261,6 +261,10 @@ export function evaluate(p: Params): ClosedResult {
     const feeBase = p.fees.feeBase === "gross" ? gross : p.fees.feeBase === "yield" ? afterCosts : afterCosts + mainInterest;
     const feeTaken = fee * Math.max(0, feeBase);
     const net = afterCosts - feeTaken;
+    // dollars use what the trades actually cost; the incumbent's time-weighted share above is for its APR only
+    const feeBackUsd = p.depositFee.on && p.depositFee.dest === "loop" ? inflow(k) * depositFeeRate : 0;
+    const afterCostsUsd = (gross - churn) * t - flowUsd + feeBackUsd;
+    const feeUsd = fee * Math.max(0, p.fees.feeBase === "gross" ? gross * t : p.fees.feeBase === "yield" ? afterCostsUsd : afterCostsUsd + mainInterest * t);
     const entryOneOff = cE * L * v.bandTarget;
     const exitOneOff = cU * L * v.bandTarget;
     vaults[k] = {
@@ -299,11 +303,12 @@ export function evaluate(p: Params): ClosedResult {
         { label: "net to depositors", value: net, kind: "total" },
       ],
       usd: {
-        userNet: net * t,
+        userNet: afterCostsUsd - feeUsd,
         hollarInterest: (loopInterest + mainInterest) * t,
-        collateralFee: feeTaken * t,
+        collateralFee: feeUsd,
         churnCost: churn * t,
-        flowCost: flows * t,
+        flowCost: flowUsd,
+        depositFeeIn: feeBackUsd,
         primeYield: primeYield * t,
         entryVolume: vol[k].entry,
         unwindVolume: vol[k].unwind,

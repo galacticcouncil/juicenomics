@@ -9,7 +9,7 @@ export interface McOptions {
   workers?: number;
   /** keep daily series (memory grows with paths × days) */
   series?: boolean;
-  /** Hydration's wasm stableswap instead of the float mirror */
+  /** Hydration's wasm stableswap instead of the float mirror; defaults to the params' sim.poolMode */
   exact?: boolean;
   /** first path index, so batches can be split or extended without repeating seeds */
   start?: number;
@@ -49,7 +49,7 @@ export async function runMc(params: Params, o: McOptions): Promise<McRun> {
       }
     });
     worker.on("error", reject);
-    worker.postMessage({ params, indices, series: !!o.series, exact: !!o.exact });
+    worker.postMessage({ params, indices, series: !!o.series, exact: o.exact ?? params.sim.poolMode === "exact" });
   })));
   return { summaries, series, days, ms: Date.now() - t0 };
 }
