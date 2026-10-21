@@ -76,6 +76,15 @@ check(opt.errors.length === 0 && (await opt.page.locator("h3:has-text('Best foun
   const b = new URLSearchParams(new URL(page.url()).hash.slice(1)).get("b");
   check(!!b && b !== "0" && /^\d+[zj]/.test(b), `scenario B is written as a versioned token (${b})`);
   check(legacyErrors.length === 0, `legacy link loads without errors${legacyErrors.length ? `: ${legacyErrors[0]}` : ""}`);
+  // and the other direction: an omitted (default) A beside a version-1 B
+  await page.goto(`${ORIGIN}#b=${v1}&t=compare`, { waitUntil: "networkidle" });
+  await page.reload({ waitUntil: "networkidle" });
+  await page.waitForSelector("h2:has-text('Settings that differ')", { timeout: 20000 });
+  const startA = page.locator("tr").filter({ has: page.locator("td").filter({ hasText: /^Start from$/ }) });
+  check((await startA.count()) === 0, "a legacy comparison with a default A keeps both scenarios' start");
+  await page.waitForTimeout(800);
+  const s = new URLSearchParams(new URL(page.url()).hash.slice(1)).get("s");
+  check(!!s && /^\d+[zj]/.test(s), `scenario A is written as a versioned token in a comparison (${s})`);
   await page.close();
 }
 // live state straight from lark 4 (the rpc has to allow cross-origin reads)

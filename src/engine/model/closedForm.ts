@@ -233,6 +233,10 @@ export function evaluate(p: Params): ClosedResult {
   const holderJensen = growthPath.inflowPerYear > 0 ? (growthPath.holderInflow * growthPath.avgUsd) / growthPath.inflowPerYear : 1;
   const holderFlows = inflowShare * holderJensen + (1 - inflowShare);
 
+  // a deposit fee paid into the loop lands in shared cash: both vaults' incumbents get it by loop ownership
+  const feeRateOf = (k: VaultKey) => (!p.depositFee.on ? 0 : p.depositFee.auto ? cE * L * p.vaults[k].bandTarget : p.depositFee.bps / 1e4);
+  const loopFeeUsd = p.depositFee.on && p.depositFee.dest === "loop" ? KEYS.reduce((a, k) => a + inflow(k) * feeRateOf(k), 0) : 0;
+
   let deskVolume = 0;
   const vaults = {} as Record<VaultKey, VaultResult>;
   for (const k of KEYS) {
@@ -244,8 +248,7 @@ export function evaluate(p: Params): ClosedResult {
     const loopInterest = lbar * (L - 1) * rLoop;
     const mainInterest = lbar * rMain;
     const gross = primeYield - loopInterest - mainInterest;
-    let depositFeeRate = 0;
-    if (p.depositFee.on) depositFeeRate = p.depositFee.auto ? cE * L * v.bandTarget : p.depositFee.bps / 1e4;
+    const depositFeeRate = feeRateOf(k);
     // pooled: everyone shares the whole loop's trading; own: a vault pays its own churn, newcomers and leavers their own trades
     const ownChurnUsd = tradingCost(vol[k].churnEntry, vol[k].churnUnwind);
     const pooledUsd = poolCost * weight(k);
@@ -253,17 +256,18 @@ export function evaluate(p: Params): ClosedResult {
     const churnUsd = pooled ? pooledUsd * churnShare : ownChurnUsd;
     const flowUsd = pooled ? pooledUsd * (1 - churnShare) : 0;
     const churn = t > 0 ? churnUsd / t : 0;
-    // a deposit fee paid into the loop goes to everyone already in it; past newcomers' costs it's a gain
-    const feeBack = p.depositFee.on && p.depositFee.dest === "loop" ? growthPath.vaults[k].holderInflow * depositFeeRate : 0;
-    const flows = (t > 0 ? (flowUsd / t) * holderFlows : 0) - feeBack;
+    // this vault's slice of the loop-bound deposit fees; an incumbent's share scales like newcomers' costs do
+    const feeBackUsd = loopFeeUsd * weight(k);
+    const flows = t > 0 ? ((flowUsd / t) * holderFlows) - (feeBackUsd / t) * holderJensen : 0;
     const afterCosts = gross - churn - flows;
     // contracts take the fee on the whole harvest, which still includes the slice that services vault interest
     const feeBase = p.fees.feeBase === "gross" ? gross : p.fees.feeBase === "yield" ? afterCosts : afterCosts + mainInterest;
     const feeTaken = fee * Math.max(0, feeBase);
     const net = afterCosts - feeTaken;
-    // dollars use what the trades actually cost; the incumbent's time-weighted share above is for its APR only
-    const feeBackUsd = p.depositFee.on && p.depositFee.dest === "loop" ? inflow(k) * depositFeeRate : 0;
+    // dollars use what the trades actually cost; the incumbent's time-weighted share above is for its APR only.
+    // newcomers' deposit fees leave depositors' dollars (to the protocol, or back to the loop above)
     const afterCostsUsd = (gross - churn) * t - flowUsd + feeBackUsd;
+    const depositFeesPaidUsd = inflow(k) * depositFeeRate;
     const feeUsd = fee * Math.max(0, p.fees.feeBase === "gross" ? gross * t : p.fees.feeBase === "yield" ? afterCostsUsd : afterCostsUsd + mainInterest * t);
     const entryOneOff = cE * L * v.bandTarget;
     const exitOneOff = cU * L * v.bandTarget;
@@ -303,7 +307,7 @@ export function evaluate(p: Params): ClosedResult {
         { label: "net to depositors", value: net, kind: "total" },
       ],
       usd: {
-        userNet: afterCostsUsd - feeUsd,
+        userNet: afterCostsUsd - feeUsd - depositFeesPaidUsd,
         hollarInterest: (loopInterest + mainInterest) * t,
         collateralFee: feeUsd,
         churnCost: churn * t,

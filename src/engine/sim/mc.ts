@@ -113,6 +113,8 @@ interface Request {
   interest: number;
   // execution costs the leaving shares bore since the vault's last harvest, for a fee on gross yield
   costBasis: number;
+  // value less principal basis, signed: a loss stays a loss when costs are added back
+  surplus: number;
   collateralOwed: number;
   cohortShares: { c: Cohort; shares: number }[];
 }
@@ -391,7 +393,7 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
     totalShares -= burn;
     v.principal -= basis;
     owed += amount;
-    requests.push({ vault: v.key, kind, owed: amount, freed: 0, charged: 0, allowance: Math.max(0, amount - basis), debtShare: 0, interest: 0, costBasis, collateralOwed: 0, cohortShares: [], ...extra });
+    requests.push({ vault: v.key, kind, owed: amount, freed: 0, charged: 0, allowance: Math.max(0, amount - basis), surplus: amount - basis, debtShare: 0, interest: 0, costBasis, collateralOwed: 0, cohortShares: [], ...extra });
   };
   const repayMain = (v: Vault, amount: number) => {
     const x = Math.min(amount, v.D);
@@ -420,10 +422,11 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
   };
   // the protocol fee on an unwound slice's own yield is paid when its claim closes, on the selected base
   const claimFee = (q: Request) => {
-    const earned = Math.max(0, q.allowance - q.charged);
+    const earned = Math.max(0, q.surplus - q.charged);
+    // gross: the signed surplus before this claim's own and earlier execution costs, less interest, clamped once
     const base = p.fees.feeBase === "contract" ? earned
       : p.fees.feeBase === "yield" ? earned - q.interest
-      : Math.max(0, q.allowance) + q.costBasis - q.interest;
+      : q.surplus + q.costBasis - q.interest;
     return Math.min(Math.max(0, q.owed - q.charged), Math.max(0, base) * fee);
   };
   const closeRequest = (q: Request) => {
@@ -573,7 +576,7 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
       v.supply -= x.shares;
       v.pendingExit -= x.shares;
       requestUnwind(v, equity, "exit", { debtShare, interest, collateralOwed, cohortShares: x.cohortShares });
-      if (equity <= 0) finishExit({ vault: x.vault, kind: "exit", owed: 0, freed: 0, charged: 0, allowance: 0, debtShare, interest, costBasis: 0, collateralOwed, cohortShares: x.cohortShares });
+      if (equity <= 0) finishExit({ vault: x.vault, kind: "exit", owed: 0, freed: 0, charged: 0, allowance: 0, surplus: 0, debtShare, interest, costBasis: 0, collateralOwed, cohortShares: x.cohortShares });
     }
 
     // 4. harvest the loop-wide surplus above principal into collateral; queued unwinds keep their

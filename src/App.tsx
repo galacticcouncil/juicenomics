@@ -43,7 +43,9 @@ export default function App() {
   useEffect(() => {
     (async () => {
       const h = readHash();
-      const token = h.s ?? (location.hash ? "" : localStorage.getItem("js:last") ?? "");
+      // an omitted A means the defaults of its link's era, which a version-1 B gives away
+      const legacyA = !h.s && Number.parseInt(h.b ?? "", 10) === 1;
+      const token = h.s ?? (location.hash ? (legacyA ? LEGACY_DEFAULTS : "") : localStorage.getItem("js:last") ?? "");
       const a = await decode(token);
       const notes: string[] = [];
       if (a.error) notes.push(`could not read the shared config (${a.error}); showing Lark 4 defaults`);
@@ -72,7 +74,8 @@ export default function App() {
   useEffect(() => {
     if (!loaded.current) return;
     const id = setTimeout(async () => {
-      const s = await encode(A);
+      // in a comparison both sides carry their version, so neither can be read in the wrong era
+      const s = await encode(A, !!B);
       const b = B ? await encode(B, true) : null;
       const q = new URLSearchParams();
       if (s) q.set("s", s);
