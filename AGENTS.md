@@ -43,6 +43,7 @@ Options apply in this order, and all of them are optional: `--preset`, then `--l
 
 ## Validating
 
+- **`npm run typecheck`** covers the app and these scripts.
 - **`npm test`** covers:
   - closed form vs the study;
   - fast pool vs wasm (quotes, reserves, a full path);
