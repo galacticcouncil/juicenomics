@@ -745,8 +745,8 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
       const freed = h - repay;
       // who bears the execution cost
       const chargeable = cost <= 0 ? 0 : attribution === "pooled" ? Math.max(0, Math.min(cost, q.allowance - q.charged)) : cost;
+      // a claim's own charge is already in its gross base (surplus before costs); only the loop's shared part goes on
       shareCost(cost - chargeable);
-      if (q.kind === "delever") vaults[q.vault].costAcc += chargeable;
       q.charged += chargeable;
       owed -= chargeable;
       const pay = Math.min(freed, q.owed - q.freed - q.charged);
