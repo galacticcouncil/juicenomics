@@ -1,4 +1,4 @@
-# juicer-sim for agents
+# juicenomics for agents
 
 Run the simulator headlessly with `npm run sim -- <command>`. Every command prints one JSON document on stdout. Errors go to stderr with a non-zero exit. `npm run sim -- help` lists everything.
 
@@ -11,7 +11,7 @@ npm run sim -- search --tier today --tvl 500000 --set sim.initial=ramped --min-p
 npm run sim -- live --block 40000                   # chain state as a config + share link
 npm run sim -- backtest                             # replay Lark 4 history against the simulator
 npm run sim -- hollar                               # HOLLAR supply, facilitator buckets, HSM inventory (mainnet)
-npm run sim -- link 'https://juicer-sim.lark.hydration.cloud/#s=2z…'   # decode a share link
+npm run sim -- link 'https://juicenomics.lark.hydration.cloud/#s=2z…'   # decode a share link
 ```
 
 ## Building a config

@@ -15,8 +15,8 @@ RUN printf '%s\n' "$VCS_REF" > /app/dist/version.txt
 FROM nginxinc/nginx-unprivileged:stable-alpine
 
 ARG VCS_REF
-LABEL org.opencontainers.image.title="Juicer economics simulator" \
-      org.opencontainers.image.source="https://github.com/galacticcouncil/juicer-sim" \
+LABEL org.opencontainers.image.title="Juicenomics" \
+      org.opencontainers.image.source="https://github.com/galacticcouncil/juicenomics" \
       org.opencontainers.image.revision="${VCS_REF}"
 
 COPY docker/nginx.conf /etc/nginx/conf.d/default.conf

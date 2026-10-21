@@ -65,7 +65,7 @@ for (const tvl of TVLS) {
             values: best.values,
             cf: cfSummaryLite(r),
             mc: Object.fromEntries(Object.entries(mc).map(([k, s]) => [k, { mean: s.mean, se: s.se, p10: s.p10, p50: s.p50, p90: s.p90 }])),
-            link: `https://juicer-sim.lark.hydration.cloud/#s=${await encode(best.params)}`,
+            link: `https://juicenomics.lark.hydration.cloud/#s=${await encode(best.params)}`,
           });
         }
         rows.push(row);

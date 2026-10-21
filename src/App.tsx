@@ -113,7 +113,7 @@ export default function App() {
   return (
     <div className="app">
       <header className="top">
-        <span className="brand">Juicer economics<small>simulator · model estimates, not a promise</small></span>
+        <span className="brand">Juicenomics<small>Juicer economics · model estimates, not a promise</small></span>
         <select value="" onChange={(e) => { if (e.target.value) setCur(preset(e.target.value)); }} title="load a preset into the scenario being edited">
           <option value="">presets…</option>
           {PRESETS.map((p) => <option key={p.key} value={p.key} title={p.note}>{p.label}</option>)}

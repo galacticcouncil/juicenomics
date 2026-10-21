@@ -1,4 +1,4 @@
-// headless juicer-sim for scripts and agents: every command prints one JSON document on stdout
+// headless juicenomics for scripts and agents: every command prints one JSON document on stdout
 import { evaluate, type ClosedResult } from "../src/engine/model/closedForm";
 import { KNOBS, KNOB, METRIC, METRICS, pareto, search, type Constraints, type Knob } from "../src/engine/opt/explore";
 import { LARK4, SNAPSHOT } from "../src/engine/params/defaults";
@@ -11,9 +11,9 @@ import { buildParams, flag, num, parseArgs, str, type Args } from "./lib/config.
 import { hollarState } from "./lib/hollar.mts";
 import { runMc, seriesBands, summarize } from "./lib/mc.mts";
 
-const SITE = "https://juicer-sim.lark.hydration.cloud/";
+const SITE = "https://juicenomics.lark.hydration.cloud/";
 
-const HELP = `juicer-sim headless: npm run sim -- <command> [options]   (JSON on stdout, errors on stderr)
+const HELP = `juicenomics headless: npm run sim -- <command> [options]   (JSON on stdout, errors on stderr)
 
 commands
   params [--group g] [--search text]   every setting: path, url code, unit, range, lever, default, help

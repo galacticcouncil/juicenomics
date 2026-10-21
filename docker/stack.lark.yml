@@ -19,11 +19,22 @@ services:
       labels:
         traefik.enable: "true"
         traefik.docker.network: gateway
-        traefik.http.routers.juicer-sim.rule: Host(`juicer-sim.lark.hydration.cloud`)
-        traefik.http.routers.juicer-sim.entrypoints: websecure
-        traefik.http.routers.juicer-sim.tls: "true"
-        traefik.http.routers.juicer-sim.tls.certresolver: myresolver
-        traefik.http.services.juicer-sim.loadbalancer.server.port: "8080"
+        traefik.http.routers.juicenomics.rule: Host(`juicenomics.lark.hydration.cloud`)
+        traefik.http.routers.juicenomics.entrypoints: websecure
+        traefik.http.routers.juicenomics.tls: "true"
+        traefik.http.routers.juicenomics.tls.certresolver: myresolver
+        traefik.http.routers.juicenomics.service: juicenomics
+        traefik.http.services.juicenomics.loadbalancer.server.port: "8080"
+        # the old name keeps working: browsers keep a share link's #fragment across the redirect
+        traefik.http.routers.juicenomics-legacy.rule: Host(`juicer-sim.lark.hydration.cloud`)
+        traefik.http.routers.juicenomics-legacy.entrypoints: websecure
+        traefik.http.routers.juicenomics-legacy.tls: "true"
+        traefik.http.routers.juicenomics-legacy.tls.certresolver: myresolver
+        traefik.http.routers.juicenomics-legacy.service: juicenomics
+        traefik.http.routers.juicenomics-legacy.middlewares: juicenomics-legacy
+        traefik.http.middlewares.juicenomics-legacy.redirectregex.regex: ^https?://juicer-sim\.lark\.hydration\.cloud/(.*)
+        traefik.http.middlewares.juicenomics-legacy.redirectregex.replacement: https://juicenomics.lark.hydration.cloud/$${1}
+        traefik.http.middlewares.juicenomics-legacy.redirectregex.permanent: "true"
 
 networks:
   gateway:

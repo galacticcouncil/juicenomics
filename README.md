@@ -1,4 +1,6 @@
-# juicer-sim
+# juicenomics
+
+Formerly juicer-sim; `https://juicer-sim.lark.hydration.cloud` links redirect here.
 
 Economics dashboard for Juicer, Hydration's leveraged PRIME loop vaults (jETH, jBTC).
 
@@ -27,4 +29,4 @@ SIM_URL=http://localhost:4173/ node scripts/smoke.mjs   # headless check of a ru
 
 Headless, for scripts and agents: `npm run sim -- help`. Every command prints JSON, covering the closed form, a parallel Monte Carlo, search, live or archived chain state, share links, a Lark 4 backtest and HOLLAR supply. See [AGENTS.md](AGENTS.md).
 
-CI checks lint, tests and the build. Publishing is manual from a Docker host logged in to Docker Hub: `scripts/publish-lark.sh` builds and pushes `galacticcouncil/juicer-sim:<commit>`, then updates the `juicer-sim` Swarmpit stack on lark. It reads the Swarmpit token from `SWARMPIT_TOKEN_FILE` (default `~/.lark_token`) and waits until `https://juicer-sim.lark.hydration.cloud` serves the commit.
+CI checks lint, tests and the build. Publishing is manual from a Docker host logged in to Docker Hub: `scripts/publish-lark.sh` builds and pushes `galacticcouncil/juicenomics:<commit>`, then updates the `juicenomics` Swarmpit stack on lark. It reads the Swarmpit token from `SWARMPIT_TOKEN_FILE` (default `~/.lark_token`) and waits until `https://juicenomics.lark.hydration.cloud` serves the commit.
