@@ -1,14 +1,21 @@
+import v2 from "../../data/defaults-v2.json";
 import { LARK4, clone } from "../params/defaults";
 import { BY_CODE, PARAMS, getPath, setPath } from "../params/schema";
 import type { Params } from "../params/types";
 import { validate } from "../params/validate";
 
 // 2: a fresh start became the default (v1 links implied the current state)
-export const VERSION = 2;
+// 3: the 30 Oct refork (jBTC alone, headroom exits); older links spell out their era's defaults, both vaults and none of the later mechanics
+export const VERSION = 3;
+const V2_ERA: Record<string, unknown> = { ...v2, eO: true, bO: true, xO: false, xG: 0, xR: 0, dC: 1e9, lP: 0 };
 const MIGRATE: Record<number, (codes: Record<string, unknown>) => Record<string, unknown>> = {
-  1: (codes) => ({ si: "lark4", ...codes }),
-  2: (codes) => codes,
+  1: (codes) => MIGRATE[2]({ si: "lark4", ...codes }),
+  2: (codes) => ({ ...V2_ERA, ...codes }),
+  3: (codes) => codes,
 };
+
+/** a link version's own defaults: the token an omitted scenario of that era stands for */
+export const eraDefaults = (version: number) => `${version}j${b64(new TextEncoder().encode("{}"))}`;
 
 function quantize(value: unknown, step?: number): unknown {
   if (typeof value !== "number" || !step) return value;
@@ -78,10 +85,7 @@ export async function encode(p: Params, always = false): Promise<string> {
   return `${VERSION}j${b64(json)}`;
 }
 
-/** a version-1 link's defaults, for the unversioned "b=0" those links used for a default scenario B */
-export const LEGACY_DEFAULTS = `1j${b64(new TextEncoder().encode("{}"))}`;
-
-export async function decode(token: string): Promise<{ params: Params; ignored: string[]; clamped: string[]; error?: string }> {
+export async function decode(token: string): Promise<{ params: Params; ignored: string[]; clamped: string[]; error?: string; era?: number }> {
   if (!token) return { params: clone(LARK4), ignored: [], clamped: [] };
   try {
     const version = Number.parseInt(token, 10);
@@ -93,7 +97,7 @@ export async function decode(token: string): Promise<{ params: Params; ignored: 
     const codes = migrate(JSON.parse(new TextDecoder().decode(bytes)) as Record<string, unknown>);
     const { params, ignored } = apply(codes);
     const v = validate(params);
-    return { params: v.params, ignored, clamped: v.clamped };
+    return { params: v.params, ignored, clamped: v.clamped, era: version < VERSION ? version : undefined };
   } catch (error) {
     return { params: clone(LARK4), ignored: [], clamped: [], error: (error as Error).message };
   }

@@ -70,6 +70,16 @@ export interface PathSummary {
   conservationGapUsd: number;
   primeYieldUsd: number;
   priceGainUsd: number;
+  /** withdrawals over the horizon: $ at their start, the share settled from headroom, the loop equity the stayers kept, the wait after the cooldown and the reserve drawn */
+  exitsUsd: number;
+  headroomExitsUsd: number;
+  headroomExitShare: number;
+  headroomKeptUsd: number;
+  exitWaitHours: number;
+  exitWaitMaxHours: number;
+  reserveDrawnUsd: number;
+  ltvAvgEth: number;
+  ltvAvgBtc: number;
   cohorts: { vault: VaultKey; day: number; usd: number; apr: number; heldDays: number }[];
 }
 
@@ -117,6 +127,8 @@ interface Request {
   surplus: number;
   collateralOwed: number;
   cohortShares: { c: Cohort; shares: number }[];
+  startedAt: number;
+  headroom: boolean;
 }
 
 interface Exit {
@@ -144,7 +156,7 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
   const LT = p.loop.primeLt;
   const solver = p.loop.solverBps / 1e4;
   const fee = p.fees.protocolFeeBps / 1e4;
-  const rLoop = p.market.hollarRate * (1 - p.fees.discountLoop);
+  const keys = KEYS.filter((k) => p.vaults[k].on);
   const rMain = p.market.hollarRate * (1 - p.fees.discountMain);
   const inc = p.improvements.incentiveBps / 1e4;
   const yNav = p.market.stress === "negCarry" ? p.market.hollarRate - 0.01 : p.market.primeYield;
@@ -161,7 +173,7 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
   const ledger = {
     hollarInterest: 0, collateralFee: 0, lpFees: 0, depositFees: 0, deskPnl: 0, incentiveCost: 0,
     entryCost: 0, unwindCost: 0, harvestCost: 0, solver: 0, arbGross: 0, arbOtherLeg: 0,
-    blockedUsd: 0, depositedUsd: 0, withdrawnUsd: 0, entryVolume: 0, unwindVolume: 0, userEarnedUsd: 0,
+    blockedUsd: 0, depositedUsd: 0, withdrawnUsd: 0, entryVolume: 0, unwindVolume: 0, userEarnedUsd: 0, reserveDrawn: 0,
     primeYield: 0, incentiveYield: 0, priceGain: 0, arbHollarIn: 0, arbHollarOut: 0, deskHollarIn: 0, deskHollarOut: 0, hollarFromUnwinds: 0,
   };
   const counts = { stallSteps: 0, unwindStallSteps: 0, arbDrySteps: 0, stopSteps: { eth: 0, btc: 0 }, relevers: { eth: 0, btc: 0 }, delevers: { eth: 0, btc: 0 }, minHf: Infinity, maxDef: 0 };
@@ -183,20 +195,29 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
   let deskHollar = 0;
   let budgetIn = p.loop.budgetCap;
   let budgetOut = p.loop.budgetCap;
+  // ExecutionController pacing: a full tranche closes its lane for paceSec, so a step trades at most this much each way
+  const paceStep = p.loop.paceSec > 0 ? (p.loop.tranche * stepH * 3600) / p.loop.paceSec : Infinity;
+  let paceIn = paceStep;
+  let paceOut = paceStep;
+  const reserve: Record<VaultKey, number> = { eth: p.policy.reserveUsd, btc: p.policy.reserveUsd };
+  const exitStats = { usd: 0, headroomUsd: 0, keptUsd: 0, waitUsdHours: 0, waitUsd: 0, waitMax: 0 };
+  let now = 0;
+  let laneHours = 0;
 
   const vaults: Record<VaultKey, Vault> = {} as Record<VaultKey, Vault>;
   for (const k of KEYS) {
     const v = p.vaults[k];
+    const units = v.on ? v.units : 0;
     vaults[k] = {
-      key: k, Q: v.units, D: 0, mainPrincipal: 0, P: v.price, supply: v.units, loopShares: 0, principal: 0, credit: 0, rampWeight: 0,
-      stop: false, pendingExit: 0, cohorts: [{ vault: k, day: 0, usd: v.units * v.price, units: v.units, shares: v.units, exitedUnits: 0, exitedShares: 0 }], nav0: 1,
+      key: k, Q: units, D: 0, mainPrincipal: 0, P: v.price, supply: units, loopShares: 0, principal: 0, credit: 0, rampWeight: 0,
+      stop: false, pendingExit: 0, cohorts: v.on ? [{ vault: k, day: 0, usd: units * v.price, units, shares: units, exitedUnits: 0, exitedShares: 0 }] : [], nav0: 1,
       newcomer: [], ramp: [], costAcc: 0,
     };
   }
   if (p.sim.initial === "ramped") {
     // steady state: each vault at its target LTV, the loop at its target leverage, the entry hole already repaid
     let eq = 0;
-    for (const k of KEYS) {
+    for (const k of keys) {
       const v = vaults[k];
       const d = p.vaults[k].bandTarget * v.Q * v.P;
       v.D = d;
@@ -209,25 +230,34 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
     A = (Lt * eq) / oracle;
     B = (Lt - 1) * eq;
   } else if (p.sim.initial === "lark4") {
-    A = p.loop.collateralUsd / oracle;
-    B = p.loop.debtUsd;
-    const sum = p.vaults.eth.loopEquityUsd + p.vaults.btc.loopEquityUsd;
+    const sum = keys.reduce((a, k) => a + p.vaults[k].loopEquityUsd, 0);
+    // a vault that's switched off takes its slice of the shared loop with it
+    const all = KEYS.reduce((a, k) => a + p.vaults[k].loopEquityUsd, 0);
+    const kept = all > 0 ? sum / all : 0;
+    A = (kept * p.loop.collateralUsd) / oracle;
+    B = kept * p.loop.debtUsd;
     // equityOf counts HOLLAR still waiting to enter (cash, pending intents); the position doesn't
     cash = Math.max(0, sum - (A * oracle - B));
     const eq = A * oracle - B + cash;
-    for (const k of KEYS) {
+    for (const k of keys) {
       vaults[k].D = p.vaults[k].mainDebt;
       vaults[k].mainPrincipal = p.vaults[k].mainDebt;
       vaults[k].principal = p.vaults[k].loopPrincipal;
       vaults[k].loopShares = sum > 0 ? (eq * p.vaults[k].loopEquityUsd) / sum : 0;
     }
-    totalShares = vaults.eth.loopShares + vaults.btc.loopShares;
+    totalShares = keys.reduce((a, k) => a + vaults[k].loopShares, 0);
   }
 
   const eps = () => (totalShares > 0 ? (A * oracle - B + cash - owed) / totalShares : 1);
   const vaultEquity = (v: Vault) => v.loopShares * eps() + requests.filter((q) => q.vault === v.key && q.kind === "delever").reduce((a, q) => a + q.owed - q.freed - q.charged, 0);
   const vaultDeficitBps = (v: Vault) => (v.D > 0 ? ((v.D - vaultEquity(v)) / v.D) * 1e4 : 0);
-  const navUnits = (v: Vault) => (v.supply > 0 ? (v.Q - (v.D - vaultEquity(v)) / v.P) / v.supply : 1);
+  // the fee an exit would pay on the vault's unharvested surplus: a share is worth what leaving returns
+  const exitFee = (v: Vault) => {
+    const surplus = v.loopShares * eps() - v.principal;
+    const due = Math.max(0, v.D - v.mainPrincipal);
+    return fee * Math.max(0, p.fees.feeBase === "contract" ? surplus : p.fees.feeBase === "yield" ? surplus - due : surplus - due + v.costAcc);
+  };
+  const navUnits = (v: Vault) => (v.supply > 0 ? (v.Q - (v.D - vaultEquity(v) + exitFee(v)) / v.P) / v.supply : 1);
   // a newcomer's own cost comes out of its own vault shares, so the vault's other holders keep their nav:
   // burn x with (V − usd)/(S − x) = V/S, the loss already in V
   const chargeCohort = (v: Vault, c: Cohort, usd: number) => {
@@ -249,7 +279,7 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
   const wealth0 = wealth();
   const hollarDebt0 = hollarDebt();
   let hollarDebtPeak = hollarDebt0;
-  for (const k of KEYS) {
+  for (const k of keys) {
     vaults[k].nav0 = navUnits(vaults[k]);
     vaults[k].cohorts[0].units = vaults[k].cohorts[0].shares * vaults[k].nav0;
   }
@@ -380,12 +410,13 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
     cash += amount;
     if (c && amount > net) chargeCohort(v, c, amount - net);
   };
-  const requestUnwind = (v: Vault, equity: number, kind: Request["kind"], extra?: Partial<Request>) => {
+  // `protect` overrides the principal basis the unwind takes, as requestUnwindProtected does
+  const requestUnwind = (v: Vault, equity: number, kind: Request["kind"], extra?: Partial<Request>, protect?: number) => {
     const e = eps();
     if (equity <= 0 || e <= 0 || v.loopShares <= 0) return;
     const burn = Math.min(v.loopShares, equity / e);
     const amount = burn * e;
-    const basis = v.loopShares > 0 ? (v.principal * burn) / v.loopShares : 0;
+    const basis = protect ?? (v.loopShares > 0 ? (v.principal * burn) / v.loopShares : 0);
     // the leaving shares take their slice of the vault's unharvested cost basis, so it's charged once
     const costBasis = v.loopShares > 0 ? (v.costAcc * burn) / v.loopShares : 0;
     v.costAcc -= costBasis;
@@ -393,7 +424,7 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
     totalShares -= burn;
     v.principal -= basis;
     owed += amount;
-    requests.push({ vault: v.key, kind, owed: amount, freed: 0, charged: 0, allowance: Math.max(0, amount - basis), surplus: amount - basis, debtShare: 0, interest: 0, costBasis, collateralOwed: 0, cohortShares: [], ...extra });
+    requests.push({ vault: v.key, kind, owed: amount, freed: 0, charged: 0, allowance: Math.max(0, amount - basis), surplus: amount - basis, debtShare: 0, interest: 0, costBasis, collateralOwed: 0, cohortShares: [], startedAt: now, headroom: false, ...extra });
   };
   const repayMain = (v: Vault, amount: number) => {
     const x = Math.min(amount, v.D);
@@ -414,9 +445,14 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
   };
   const finishExit = (q: Request, feeCut = 0) => {
     const v = vaults[q.vault];
-    // freed loop equity repays the exit's Main slice; a shortfall comes out of its collateral
-    const valueUsd = q.collateralOwed * v.P + (q.freed - q.debtShare) - feeCut;
+    // freed loop equity repays the exit's Main slice; the protocol reserve covers a shortfall, then its collateral does
+    const drawn = Math.min(reserve[q.vault], Math.max(0, q.debtShare - q.freed));
+    reserve[q.vault] -= drawn;
+    ledger.reserveDrawn += drawn;
+    const valueUsd = q.collateralOwed * v.P + (q.freed + drawn - q.debtShare) - feeCut;
     ledger.withdrawnUsd += valueUsd;
+    // the lane time this step's unwinds took counts too
+    if (!q.headroom) waited(Math.max(0, valueUsd), now - q.startedAt + laneHours);
     const total = q.cohortShares.reduce((a, x) => a + x.shares, 0) || 1;
     for (const x of q.cohortShares) x.c.exitedUnits += (valueUsd * x.shares) / total / v.P;
   };
@@ -439,6 +475,19 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
       v.mainPrincipal += feeCut;
     }
   };
+  const waited = (usd: number, hours: number) => {
+    exitStats.waitUsd += usd;
+    exitStats.waitUsdHours += usd * hours;
+    exitStats.waitMax = Math.max(exitStats.waitMax, hours);
+  };
+  // CollateralVault.totalQueuedDebt
+  const queuedDebt = (k: VaultKey) => requests.reduce((a, q) => a + (q.vault === k && q.kind === "exit" ? Math.max(0, q.debtShare - q.freed) : 0), 0);
+  // CompoundLogic._headroomOpen: the vault's whole debt against what its collateral is worth once this exit leaves
+  const headroomOpen = (v: Vault, leaving: number) => {
+    const cap = p.vaults[v.key].maxLtv - p.policy.headroomGapBps / 1e4;
+    const left = v.Q - leaving;
+    return p.policy.headroomOn && cap > 0 && left > 0 && v.D + queuedDebt(v.key) <= cap * left * v.P;
+  };
   // a cost every loop share bears, split by holding
   const shareCost = (usd: number) => {
     if (usd <= 0 || totalShares <= 0) return;
@@ -452,9 +501,11 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
   const horizonYears = days / 365;
   let costCum = 0;
   let protocolCum = 0;
+  const ltvSum: Record<VaultKey, number> = { eth: 0, btc: 0 };
 
   for (let i = 0; i < steps; i++) {
     const t = i * stepH;
+    now = t;
     const day = i / stepsPerDay;
     // 1. prices
     const P0 = { eth: vaults.eth.P, btc: vaults.btc.P };
@@ -472,6 +523,8 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
     pools.peg = oracle;
 
     // 2. accrue
+    // JuicerDiscount: the loop's discount covers min(debt, cap)
+    const rLoop = p.market.hollarRate * (1 - p.fees.discountLoop * (B > 0 ? Math.min(1, p.fees.loopDiscountCapUsd / B) : 1));
     const loopInt = B * (Math.exp(rLoop * dt) - 1);
     B += loopInt;
     let mainInt = 0;
@@ -495,6 +548,9 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
     }
     budgetIn = Math.min(p.loop.budgetCap + p.loop.budgetRefillPerSec * 3600 * stepH, budgetIn + p.loop.budgetRefillPerSec * 3600 * stepH);
     budgetOut = Math.min(p.loop.budgetCap + p.loop.budgetRefillPerSec * 3600 * stepH, budgetOut + p.loop.budgetRefillPerSec * 3600 * stepH);
+    paceIn = paceStep;
+    paceOut = paceStep;
+    laneHours = 0;
     // the arb restocks whichever side ran dry, after its refill delay
     if (arbEmptyAt >= 0 || arbHollarEmptyAt >= 0) counts.arbDrySteps++;
     if (arbEmptyAt >= 0 && p.arb.refillHours > 0 && t - arbEmptyAt >= p.arb.refillHours) {
@@ -507,7 +563,7 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
     }
 
     // 3. flows
-    for (const k of KEYS) {
+    for (const k of keys) {
       const v = vaults[k];
       const tvl = v.Q * v.P;
       const growth = p.flows.growth === "none" ? 0
@@ -571,12 +627,36 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
       const debtShare = v.D * frac;
       const interest = Math.max(0, v.D - v.mainPrincipal) * frac;
       const equity = v.loopShares * eps() * frac;
+      const usd = collateralOwed * v.P;
+      exitStats.usd += usd;
+      const base = { vault: x.vault, kind: "exit" as const, owed: 0, freed: 0, charged: 0, allowance: 0, surplus: 0, interest: 0, costBasis: 0, collateralOwed, cohortShares: x.cohortShares, startedAt: t };
+      // CompoundLogic._fromHeadroom: the stayers keep the exit's loop slice and the Main debt it backs
+      if (equity > 0 && debtShare > 0 && headroomOpen(v, collateralOwed)) {
+        const shortfall = Math.max(0, debtShare - equity);
+        if (shortfall === 0 || queuedDebt(x.vault) + shortfall <= reserve[x.vault]) {
+          v.Q -= collateralOwed;
+          v.supply -= x.shares;
+          v.pendingExit -= x.shares;
+          exitStats.headroomUsd += usd;
+          exitStats.keptUsd += Math.min(equity, debtShare);
+          waited(usd, 0);
+          if (shortfall > 0) {
+            // a scaled Main exit for the shortfall alone, repaid from the reserve
+            repayMain(v, shortfall);
+            finishExit({ ...base, debtShare: shortfall, headroom: true });
+          } else if (equity - debtShare > 0.005) {
+            // only the surplus over the debt unwinds, with no principal basis; it owes the fee a full exit would
+            requestUnwind(v, equity - debtShare, "exit", { collateralOwed, cohortShares: x.cohortShares, headroom: true, surplus: equity - v.principal * frac }, 0);
+          } else finishExit({ ...base, debtShare: 0, headroom: true });
+          continue;
+        }
+      }
       v.Q -= collateralOwed;
       repayMain(v, debtShare);
       v.supply -= x.shares;
       v.pendingExit -= x.shares;
       requestUnwind(v, equity, "exit", { debtShare, interest, collateralOwed, cohortShares: x.cohortShares });
-      if (equity <= 0) finishExit({ vault: x.vault, kind: "exit", owed: 0, freed: 0, charged: 0, allowance: 0, surplus: 0, debtShare, interest, costBasis: 0, collateralOwed, cohortShares: x.cohortShares });
+      if (equity <= 0) finishExit({ ...base, debtShare, interest, headroom: false });
     }
 
     // 4. harvest the loop-wide surplus above principal into collateral; queued unwinds keep their
@@ -659,7 +739,7 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
         prev = f;
       }
     }
-    for (const k of KEYS) {
+    for (const k of keys) {
       const v = vaults[k];
       const pv = p.vaults[k];
       // a committed de-lever settles before anything else (CollateralVault.rebalance)
@@ -714,7 +794,7 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
       requests.splice(j, 1);
       closeRequest(q);
     }
-    while (requests.length && A > 0 && budgetOut > 1) {
+    while (requests.length && A > 0 && budgetOut > 1 && paceOut > 1) {
       const q = requests[0];
       const need = q.owed - q.freed - q.charged;
       if (need <= 0.005) {
@@ -725,7 +805,7 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
       }
       const position = A * oracle - B;
       const Lcur = position > 0 ? (A * oracle) / position : Lt;
-      const s = Math.min(A, (need * Lcur) / oracle, p.loop.tranche / oracle, budgetOut / oracle);
+      const s = Math.min(A, (need * Lcur) / oracle, p.loop.tranche / oracle, budgetOut / oracle, paceOut / oracle);
       // unwinds go through the same capped lane as entries
       const direct = desk.desk && desk.deskMode === "direct" && desk.deskBid && deskHollar >= s * oracle;
       const hq = (direct ? s * oracle * (1 - desk.deskSpreadBps / 1e4) : pool.quote(0, s)) * (1 - solver);
@@ -736,6 +816,8 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
       const h = sellPrime(s) * (1 - solver);
       ledger.hollarFromUnwinds += h;
       budgetOut -= s * oracle;
+      paceOut -= s * oracle;
+      if (p.loop.paceSec > 0) laneHours += (s * oracle * p.loop.paceSec) / p.loop.tranche / 3600;
       ledger.unwindVolume += s * oracle;
       A -= s;
       const cost = s * oracle - h;
@@ -762,7 +844,7 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
       const exposure = A * oracle;
       const borrowAllowed = !requests.length;
       const need = Math.max(borrowAllowed ? Lt * position - exposure : cash, 0);
-      const T = Math.min(p.loop.tranche, need, budgetIn);
+      const T = Math.min(p.loop.tranche, need, budgetIn, paceIn);
       if (T < Math.min(1, p.loop.tranche * 0.02)) break;
       const out = quoteBuy(T) * (1 - solver);
       const shortfall = (1 - (out * oracle) / T) * 1e4;
@@ -776,6 +858,7 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
       B += T - fromCash;
       A += got;
       budgetIn -= T;
+      paceIn -= T;
       const cost = T - got * oracle;
       ledger.entryCost += cost;
       ledger.entryVolume += T;
@@ -818,7 +901,7 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
     respond(t);
 
     // 7. keeper deposit stops
-    for (const k of KEYS) {
+    for (const k of keys) {
       const v = vaults[k];
       const d = vaultDeficitBps(v);
       if (d > p.policy.stopBps) v.stop = true;
@@ -835,28 +918,31 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
     if ((i + 1) % stepsPerDay === 0) {
       const d = (i + 1) / stepsPerDay - 1;
       costCum = ledger.entryCost + ledger.unwindCost + ledger.harvestCost;
-      protocolCum = ledger.hollarInterest + ledger.collateralFee + ledger.lpFees + ledger.depositFees + ledger.deskPnl - ledger.incentiveCost;
+      protocolCum = ledger.hollarInterest + ledger.collateralFee + ledger.lpFees + ledger.depositFees + ledger.deskPnl - ledger.incentiveCost - ledger.reserveDrawn;
       const row = d * SERIES.length;
       const position = A * oracle - B;
+      const ltv = (v: Vault) => (v.Q > 0 ? v.D / (v.Q * v.P) : 0);
+      for (const k of keys) ltvSum[k] += ltv(vaults[k]);
+      const of = (k: VaultKey, x: number) => (p.vaults[k].on ? x : NaN);
       const vals: Record<SeriesKey, number> = {
-        priceEth: vaults.eth.P / startPrice.eth,
-        priceBtc: vaults.btc.P / startPrice.btc,
+        priceEth: of("eth", vaults.eth.P / startPrice.eth),
+        priceBtc: of("btc", vaults.btc.P / startPrice.btc),
         prime: oracle,
         loopDeficit: loopDef,
-        defEth: vaultDeficitBps(vaults.eth),
-        defBtc: vaultDeficitBps(vaults.btc),
-        ltvEth: vaults.eth.Q > 0 ? vaults.eth.D / (vaults.eth.Q * vaults.eth.P) : 0,
-        ltvBtc: vaults.btc.Q > 0 ? vaults.btc.D / (vaults.btc.Q * vaults.btc.P) : 0,
+        defEth: of("eth", vaultDeficitBps(vaults.eth)),
+        defBtc: of("btc", vaultDeficitBps(vaults.btc)),
+        ltvEth: of("eth", ltv(vaults.eth)),
+        ltvBtc: of("btc", ltv(vaults.btc)),
         hf: Math.min(hf(), 5),
         lev: position > 0 ? (A * oracle) / position : 0,
         premium: edge(0),
         arbPrime,
-        navEth: navUnits(vaults.eth) / vaults.eth.nav0,
-        navBtc: navUnits(vaults.btc) / vaults.btc.nav0,
+        navEth: of("eth", navUnits(vaults.eth) / vaults.eth.nav0),
+        navBtc: of("btc", navUnits(vaults.btc) / vaults.btc.nav0),
         protocolCum,
         costCum,
-        stopEth: vaults.eth.stop ? 1 : 0,
-        stopBtc: vaults.btc.stop ? 1 : 0,
+        stopEth: of("eth", vaults.eth.stop ? 1 : 0),
+        stopBtc: of("btc", vaults.btc.stop ? 1 : 0),
         tvl: vaults.eth.Q * vaults.eth.P + vaults.btc.Q * vaults.btc.P,
       };
       SERIES.forEach((key, j) => { series[row + j] = vals[key]; });
@@ -877,7 +963,7 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
     for (const x of exits) if (x.vault === k) for (const cs of x.cohortShares) add(cs.c, cs.shares * nav);
     for (const q of requests) {
       if (q.vault !== k || q.kind !== "exit") continue;
-      const usd = q.collateralOwed * v.P + (q.owed - q.charged) - q.debtShare - claimFee(q);
+      const usd = q.collateralOwed * v.P + (q.owed - q.charged) - q.debtShare - claimFee(q) + Math.min(reserve[k], Math.max(0, q.debtShare - q.owed + q.charged));
       const total = q.cohortShares.reduce((a, cs) => a + cs.shares, 0) || 1;
       for (const cs of q.cohortShares) add(cs.c, (usd * cs.shares) / total / v.P);
     }
@@ -889,11 +975,13 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
     });
   });
 
+  // exits still queued at the horizon count with the wait they have had so far
+  for (const q of requests) if (q.kind === "exit" && !q.headroom) waited(q.collateralOwed * vaults[q.vault].P, now + stepH - q.startedAt);
   const flows = ledger.depositedUsd - ledger.depositFees - ledger.withdrawnUsd;
-  const earned = ledger.primeYield + ledger.incentiveYield + ledger.priceGain - ledger.hollarInterest - ledger.entryCost - ledger.unwindCost - ledger.harvestCost - ledger.collateralFee;
+  const earned = ledger.primeYield + ledger.incentiveYield + ledger.priceGain + ledger.reserveDrawn - ledger.hollarInterest - ledger.entryCost - ledger.unwindCost - ledger.harvestCost - ledger.collateralFee;
   const summary: PathSummary = {
-    aprEth: apr(vaults.eth),
-    aprBtc: apr(vaults.btc),
+    aprEth: p.vaults.eth.on ? apr(vaults.eth) : NaN,
+    aprBtc: p.vaults.btc.on ? apr(vaults.btc) : NaN,
     protocol: protocolCum / years,
     hollarInterest: ledger.hollarInterest / years,
     collateralFee: ledger.collateralFee / years,
@@ -936,6 +1024,15 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
     conservationGapUsd: wealth() - wealth0 - flows - earned,
     primeYieldUsd: ledger.primeYield + ledger.incentiveYield,
     priceGainUsd: ledger.priceGain,
+    exitsUsd: exitStats.usd,
+    headroomExitsUsd: exitStats.headroomUsd,
+    headroomExitShare: exitStats.usd > 0 ? exitStats.headroomUsd / exitStats.usd : 0,
+    headroomKeptUsd: exitStats.keptUsd,
+    exitWaitHours: exitStats.waitUsd > 0 ? exitStats.waitUsdHours / exitStats.waitUsd : 0,
+    exitWaitMaxHours: exitStats.waitMax,
+    reserveDrawnUsd: ledger.reserveDrawn,
+    ltvAvgEth: p.vaults.eth.on ? ltvSum.eth / days : NaN,
+    ltvAvgBtc: p.vaults.btc.on ? ltvSum.btc / days : NaN,
     cohorts,
   };
   return { series, days, summary };

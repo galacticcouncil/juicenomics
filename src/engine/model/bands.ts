@@ -9,6 +9,7 @@ export interface BandInput {
   vol: number;
   drift: number;
   monitorYears: number;
+  ltvBelow?: number[];
 }
 
 export interface BandResult {
@@ -21,6 +22,7 @@ export interface BandResult {
   deleverFrac: number;
   releverPerYear: number;
   deleverPerYear: number;
+  pBelow: number[];
 }
 
 const BETA = 0.5826;
@@ -30,7 +32,7 @@ export function bands(x: BandInput): BandResult {
   const a0 = Math.log(target / lo);
   const b0 = Math.log(hi / target);
   if (!(a0 > 0) || !(b0 > 0) || vol <= 0) {
-    return { a: a0, b: b0, eventsPerYear: 0, pRelever: 0, avgLtv: target, releverFrac: 0, deleverFrac: 0, releverPerYear: 0, deleverPerYear: 0 };
+    return { a: a0, b: b0, eventsPerYear: 0, pRelever: 0, avgLtv: target, releverFrac: 0, deleverFrac: 0, releverPerYear: 0, deleverPerYear: 0, pBelow: (x.ltvBelow ?? []).map((l) => (target <= l ? 1 : 0)) };
   }
   const shift = BETA * vol * Math.sqrt(Math.max(0, x.monitorYears));
   const a = a0 + shift;
@@ -47,13 +49,16 @@ export function bands(x: BandInput): BandResult {
   const h = (a + b) / steps;
   let time = 0;
   let ltvTime = 0;
+  const below = (x.ltvBelow ?? []).map(() => 0);
   for (let i = 0; i <= steps; i++) {
     const y = -b + i * h;
     const g = (2 * (s(Math.min(0, y)) - s(-b)) * (s(a) - s(Math.max(0, y)))) / (span * vol * vol * ds(y));
     const w = i === 0 || i === steps ? 0.5 : 1;
     time += w * g * h;
     // log LTV moves opposite to the log price; the band is measured from the undetected levels
-    ltvTime += w * g * h * target * Math.exp(-Math.max(-b0, Math.min(a0, y)));
+    const ltv = target * Math.exp(-Math.max(-b0, Math.min(a0, y)));
+    ltvTime += w * g * h * ltv;
+    if (x.ltvBelow) for (let j = 0; j < below.length; j++) if (ltv <= x.ltvBelow[j]) below[j] += w * g * h;
   }
   const eventsPerYear = time > 0 ? 1 / time : 0;
   const avgLtv = time > 0 ? ltvTime / time : target;
@@ -69,5 +74,6 @@ export function bands(x: BandInput): BandResult {
     deleverFrac,
     releverPerYear: eventsPerYear * pRelever * releverFrac,
     deleverPerYear: eventsPerYear * (1 - pRelever) * deleverFrac,
+    pBelow: below.map((b) => (time > 0 ? b / time : 0)),
   };
 }

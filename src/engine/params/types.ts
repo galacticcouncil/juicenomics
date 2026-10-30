@@ -1,6 +1,7 @@
 export type VaultKey = "eth" | "btc";
 
 export interface VaultParams {
+  on: boolean;
   name: string;
   collateral: string;
   units: number;
@@ -52,6 +53,7 @@ export interface Params {
     laneCapBps: number;
     budgetCap: number;
     budgetRefillPerSec: number;
+    paceSec: number;
     collateralUsd: number;
     debtUsd: number;
   };
@@ -86,6 +88,7 @@ export interface Params {
     protocolFeeBps: number;
     discountMain: number;
     discountLoop: number;
+    loopDiscountCapUsd: number;
     feeBase: "contract" | "yield" | "gross";
   };
   depositFee: {
@@ -113,6 +116,9 @@ export interface Params {
     cooldownHours: number;
     harvestThresholdBps: number;
     costReserveBps: number;
+    headroomOn: boolean;
+    headroomGapBps: number;
+    reserveUsd: number;
   };
   flows: {
     growth: "none" | "linear" | "exp";

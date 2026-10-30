@@ -3,9 +3,10 @@ import { bands, type BandResult } from "./bands";
 import { costs, type CostBreakdown } from "./costs";
 
 /** how much of the pool-aware churn saving survives as rebalances grow against pool 143; below 0 once they
- * outgrow the pool and the arb's inventory and cost more than a tranche at the arb's band (fitted 20 Oct to the
- * Monte Carlo at 1-50× Lark 4's TVL, wide bands and a 2 bps pool fee: rmse 0.10 pp) */
-export const NETTING = { floor: -0.3, base: 1.5, div: 32 };
+ * outgrow the pool and the arb's inventory and cost more than a tranche at the arb's band (fitted 30 Oct to the
+ * Monte Carlo at 1-50× Lark 4's jBTC TVL, steady state, the 65/75/83 band, a 2 bps pool fee and the loop discount's
+ * cap lifted: rmse 0.007 pp of APR before the fee; scripts/fit-netting.mts) */
+export const NETTING = { floor: -0.58, base: 2, div: 23 };
 
 export interface TvlPath {
   /** average and final TVL over the horizon, $ */
@@ -23,7 +24,7 @@ export function tvlPaths(p: Params, years: number): { vaults: Record<VaultKey, T
   const n = 400;
   const h = T / n;
   const lambda = p.flows.growth === "exp" ? Math.log(Math.max(1, p.flows.growthFactor)) / T : 0;
-  const keys: VaultKey[] = ["eth", "btc"];
+  const keys = activeKeys(p);
   const V = {} as Record<VaultKey, number>;
   const sum = {} as Record<VaultKey, { v: number; inflow: number; frac: number }>;
   for (const k of keys) {
@@ -49,7 +50,7 @@ export function tvlPaths(p: Params, years: number): { vaults: Record<VaultKey, T
     }
     loopFrac += vAll > 0 ? inAll / vAll : 0;
   }
-  const vaults = {} as Record<VaultKey, TvlPath>;
+  const vaults = { eth: { avgUsd: 0, endUsd: 0, inflowPerYear: 0, holderInflow: 0 }, btc: { avgUsd: 0, endUsd: 0, inflowPerYear: 0, holderInflow: 0 } } as Record<VaultKey, TvlPath>;
   for (const k of keys) vaults[k] = { avgUsd: sum[k].v / n, endUsd: V[k], inflowPerYear: sum[k].inflow / n, holderInflow: sum[k].frac / n };
   return {
     vaults,
@@ -89,9 +90,12 @@ export interface Step {
 export interface VaultResult {
   key: VaultKey;
   name: string;
+  on: boolean;
   tvlUsd: number;
   bands: BandResult;
   avgLtv: number;
+  /** share of exits settled from LTV headroom, the LTV an exit must leave the vault under, and the LTV drift that leaves the stayers */
+  headroom: { share: number; fitsBelow: number; pushPerYear: number };
   /** all per $1 of collateral per year */
   primeYield: number;
   loopInterest: number;
@@ -125,7 +129,9 @@ export interface VaultResult {
 
 export interface ClosedResult {
   lev: Leverage;
-  rates: { y: number; rMain: number; rLoop: number; spread: number };
+  active: VaultKey[];
+  /** loopDiscounted: share of the loop's debt under the discount cap */
+  rates: { y: number; rMain: number; rLoop: number; spread: number; loopDiscounted: number };
   scale: { eventUsd: number; depthUsd: number; netting: number };
   costs: CostBreakdown;
   vaults: Record<VaultKey, VaultResult>;
@@ -133,6 +139,8 @@ export interface ClosedResult {
   breakEven: { entryDays: number; roundTripDays: number; holeDays: number };
   deficit: { structuralBps: number; admissionHeadroomBps: number; depositsClose: boolean; closeAtLeverage: number; stopsAt: number };
   lark4Now: { holeUsd: number; holeBps: number; holeMarketUsd: number };
+  /** withdrawals per year, the share settled from headroom, and the PRIME those exits didn't sell */
+  exits: { usdPerYear: number; headroomShare: number; unwindAvoidedUsd: number };
   protocol: { hollarInterest: number; collateralFee: number; lpFees: number; depositFees: number; deskSpread: number; incentiveCost: number; total: number; inCollateralShare: number };
   external: { arbGross: number; arbOtherLeg: number; arbNet: number; solver: number };
   /** HOLLAR Juicer borrows (loop + vaults) and pushes through pool 143: per $1 deposited, at steady state, sold at a fresh ramp, and per year */
@@ -142,7 +150,10 @@ export interface ClosedResult {
   issues: string[];
 }
 
-const KEYS: VaultKey[] = ["eth", "btc"];
+const ALL: VaultKey[] = ["eth", "btc"];
+const GH: [number, number][] = [[0, 0.457142857142857], ...[[1.154405394739968, 0.240123178605013], [2.366759410734541, 0.030757123967586], [3.750439717725742, 0.000548268855972]].flatMap(([z, w]): [number, number][] => [[z, w], [-z, w]])];
+
+export const activeKeys = (p: Params): VaultKey[] => ALL.filter((k) => p.vaults[k].on);
 
 export function evaluate(p: Params): ClosedResult {
   const issues: string[] = [];
@@ -152,24 +163,65 @@ export function evaluate(p: Params): ClosedResult {
   const inc = p.improvements.incentiveBps / 1e4;
   const y = p.market.primeYield + inc;
   const rMain = p.market.hollarRate * (1 - p.fees.discountMain);
-  const rLoop = p.market.hollarRate * (1 - p.fees.discountLoop);
-  // per $1 of HOLLAR principal
-  const spread = L * y - (L - 1) * rLoop - rMain;
   const fee = p.fees.protocolFeeBps / 1e4;
   const monitorYears = p.market.monitorMinutes / (60 * 24 * 365);
   const horizonYears = p.sim.horizonDays / 365;
+  const KEYS = activeKeys(p);
+  const n = Math.max(1, KEYS.length);
 
   // PRIME the loop must buy: churn relevers plus inflows over the horizon
-  const tvl = (k: VaultKey) => p.vaults[k].units * p.vaults[k].price;
+  const tvl = (k: VaultKey) => (p.vaults[k].on ? p.vaults[k].units * p.vaults[k].price : 0);
   // a growing (or capped) vault: $ volumes and revenue scale with its average TVL over the horizon
   const growthPath = tvlPaths(p, horizonYears);
   const size = (k: VaultKey) => growthPath.vaults[k].avgUsd;
-  const bandOf = (k: VaultKey) => {
-    const v = p.vaults[k];
-    return bands({ lo: v.bandLo, target: v.bandTarget, hi: v.bandHi, vol: v.vol, drift: v.drift, monitorYears });
-  };
-  const bandRes = { eth: bandOf("eth"), btc: bandOf("btc") };
   const inflow = (k: VaultKey) => growthPath.vaults[k].inflowPerYear;
+  const bandOf = (k: VaultKey, drift = p.vaults[k].drift, ltvBelow?: number[]) => {
+    const v = p.vaults[k];
+    return bands({ lo: v.bandLo, target: v.bandTarget, hi: v.bandHi, vol: v.vol, drift, monitorYears, ltvBelow });
+  };
+  const band0 = { eth: bandOf("eth"), btc: bandOf("btc") };
+
+  // the loop discount covers min(loop debt, cap): a cap in dollars on a debt that follows the collateral's price
+  const loopDebtUsd = KEYS.reduce((a, k) => a + band0[k].avgLtv * (L - 1) * size(k), 0);
+  const debtVol = loopDebtUsd > 0 ? KEYS.reduce((a, k) => a + p.vaults[k].vol * band0[k].avgLtv * size(k), 0) / KEYS.reduce((a, k) => a + band0[k].avgLtv * size(k), 0) : 0;
+  const discounted = cappedShare(loopDebtUsd, p.fees.loopDiscountCapUsd, debtVol, horizonYears);
+  const rLoop = p.market.hollarRate * (1 - p.fees.discountLoop * discounted);
+  // per $1 of HOLLAR principal
+  const spread = L * y - (L - 1) * rLoop - rMain;
+
+  // served exits leave their debt with the stayers, pushing the LTV up against deposits and reinvested carry; the share
+  // served is the time an exit of each size still fits under the cap, with that drift
+  const sigma = p.flows.sizeSigma;
+  // dollar-weighted exit sizes are lognormal around median·e^σ²: 7-point Gauss–Hermite
+  const sizes = GH.map(([z, w]) => [p.flows.sizeMedianUsd * Math.exp(sigma * sigma + sigma * z), w]);
+  const headroom = {} as Record<VaultKey, { share: number; fitsBelow: number; pushPerYear: number }>;
+  const bandRes = {} as Record<VaultKey, BandResult>;
+  for (const k of ALL) {
+    const v = p.vaults[k];
+    const t = size(k);
+    const cap = v.maxLtv - p.policy.headroomGapBps / 1e4;
+    const fits = sizes.map(([usd]) => (t > usd ? cap * (1 - usd / t) : 0));
+    const fitsBelow = t > 0 ? cap * (1 - sizes.reduce((a, [usd, w]) => a + w * Math.min(1, usd / t), 0)) : 0;
+    if (!p.policy.headroomOn || !v.on || cap <= v.bandLo) {
+      headroom[k] = { share: 0, fitsBelow, pushPerYear: 0 };
+      bandRes[k] = band0[k];
+      continue;
+    }
+    const served = (br: BandResult) => br.pBelow.reduce((a, x, j) => a + sizes[j][1] * x, 0);
+    const pull = (t > 0 ? inflow(k) / t : 0) + Math.max(0, (1 - fee) * band0[k].avgLtv * spread);
+    let br = bandOf(k, v.drift, fits);
+    let share = served(br);
+    for (let i = 0; i < 40 && v.outflowRate > 0; i++) {
+      const push = Math.max(0, share * v.outflowRate - pull);
+      br = bandOf(k, v.drift - push, fits);
+      const next = 0.5 * share + 0.5 * served(br);
+      if (Math.abs(next - share) < 1e-5) break;
+      share = next;
+    }
+    headroom[k] = { share, fitsBelow, pushPerYear: Math.max(0, share * v.outflowRate - pull) };
+    bandRes[k] = v.outflowRate > 0 ? br : band0[k];
+  }
+
   const primeDemandUsd = KEYS.reduce(
     (acc, k) => acc + L * (bandRes[k].releverPerYear * size(k) + inflow(k) * p.vaults[k].bandTarget) * horizonYears,
     p.sim.initial === "fresh" ? KEYS.reduce((a, k) => a + L * tvl(k) * p.vaults[k].bandTarget, 0) : 0,
@@ -179,9 +231,9 @@ export function evaluate(p: Params): ClosedResult {
   const cE = c.entryBps / 1e4;
   const cU = c.unwindBps / 1e4;
 
-  // trading volumes per vault, $ per year
+  // trading volumes per vault, $ per year; exits served from headroom sell nothing
   const vol = {} as Record<VaultKey, { entry: number; unwind: number; churnEntry: number; churnUnwind: number }>;
-  for (const k of KEYS) {
+  for (const k of ALL) {
     const t = size(k);
     const br = bandRes[k];
     const v = p.vaults[k];
@@ -192,7 +244,7 @@ export function evaluate(p: Params): ClosedResult {
       churnEntry,
       churnUnwind,
       entry: churnEntry + L * inflowFrac * t * v.bandTarget,
-      unwind: churnUnwind + L * v.outflowRate * t * v.bandTarget,
+      unwind: churnUnwind + L * v.outflowRate * (1 - headroom[k].share) * t * v.bandTarget,
     };
   }
   // buys and sells that meet in pool 143 only pay the round trip; the excess pays the arb's band
@@ -204,7 +256,7 @@ export function evaluate(p: Params): ClosedResult {
     const t = size(k);
     const ev = br.eventsPerYear > 0 ? (br.releverPerYear + br.deleverPerYear) / br.eventsPerYear : 0;
     return a + L * ev * t;
-  }, 0) / KEYS.length;
+  }, 0) / n;
   const netting = Math.min(1, NETTING.floor + (NETTING.base - NETTING.floor) / (1 + eventUsd / Math.max(1, depthUsd / NETTING.div)));
   const tradingCost = (entry: number, unwind: number) => {
     const constant = entry * cE + unwind * cU;
@@ -220,26 +272,27 @@ export function evaluate(p: Params): ClosedResult {
   const totalUnwind = KEYS.reduce((a, k) => a + vol[k].unwind, 0);
   const poolCost = tradingCost(totalEntry, totalUnwind);
   const weight = (k: VaultKey) => {
-    const w = (x: VaultKey) => bandRes[x].avgLtv * size(x);
-    const sum = w("eth") + w("btc");
-    return sum > 0 ? w(k) / sum : 0.5;
+    const w = (x: VaultKey) => (p.vaults[x].on ? bandRes[x].avgLtv * size(x) : 0);
+    const sum = KEYS.reduce((a, x) => a + w(x), 0);
+    return sum > 0 ? w(k) / sum : 1 / n;
   };
 
   // an incumbent bears each newcomer's pooled entry in proportion to the TVL at the time, so constant-$ inflows into a
   // growing vault cost it the time average of inflow/TVL, more than the $ average (1× for exponential growth)
   const inflowProxy = KEYS.reduce((a, k) => a + L * inflow(k) * p.vaults[k].bandTarget * cE, 0);
-  const outflowProxy = KEYS.reduce((a, k) => a + L * p.vaults[k].outflowRate * size(k) * p.vaults[k].bandTarget * cU, 0);
+  const outflowProxy = KEYS.reduce((a, k) => a + L * p.vaults[k].outflowRate * (1 - headroom[k].share) * size(k) * p.vaults[k].bandTarget * cU, 0);
   const inflowShare = inflowProxy + outflowProxy > 0 ? inflowProxy / (inflowProxy + outflowProxy) : 0;
   const holderJensen = growthPath.inflowPerYear > 0 ? (growthPath.holderInflow * growthPath.avgUsd) / growthPath.inflowPerYear : 1;
   const holderFlows = inflowShare * holderJensen + (1 - inflowShare);
 
-  // a deposit fee paid into the loop lands in shared cash: both vaults' incumbents get it by loop ownership
+  // a deposit fee paid into the loop lands in shared cash: every vault's incumbents get it by loop ownership
   const feeRateOf = (k: VaultKey) => (!p.depositFee.on ? 0 : p.depositFee.auto ? cE * L * p.vaults[k].bandTarget : p.depositFee.bps / 1e4);
   const loopFeeUsd = p.depositFee.on && p.depositFee.dest === "loop" ? KEYS.reduce((a, k) => a + inflow(k) * feeRateOf(k), 0) : 0;
+  const churnShare = poolCost > 0 ? tradingCost(KEYS.reduce((a, x) => a + vol[x].churnEntry, 0), KEYS.reduce((a, x) => a + vol[x].churnUnwind, 0)) / poolCost : 0;
 
   let deskVolume = 0;
   const vaults = {} as Record<VaultKey, VaultResult>;
-  for (const k of KEYS) {
+  for (const k of ALL) {
     const v = p.vaults[k];
     const t = size(k);
     const br = bandRes[k];
@@ -251,13 +304,12 @@ export function evaluate(p: Params): ClosedResult {
     const depositFeeRate = feeRateOf(k);
     // pooled: everyone shares the whole loop's trading; own: a vault pays its own churn, newcomers and leavers their own trades
     const ownChurnUsd = tradingCost(vol[k].churnEntry, vol[k].churnUnwind);
-    const pooledUsd = poolCost * weight(k);
-    const churnShare = poolCost > 0 ? tradingCost(KEYS.reduce((a, x) => a + vol[x].churnEntry, 0), KEYS.reduce((a, x) => a + vol[x].churnUnwind, 0)) / poolCost : 0;
+    const pooledUsd = v.on ? poolCost * weight(k) : 0;
     const churnUsd = pooled ? pooledUsd * churnShare : ownChurnUsd;
     const flowUsd = pooled ? pooledUsd * (1 - churnShare) : 0;
     const churn = t > 0 ? churnUsd / t : 0;
     // this vault's slice of the loop-bound deposit fees; an incumbent's share scales like newcomers' costs do
-    const feeBackUsd = loopFeeUsd * weight(k);
+    const feeBackUsd = v.on ? loopFeeUsd * weight(k) : 0;
     const flows = t > 0 ? ((flowUsd / t) * holderFlows) - (feeBackUsd / t) * holderJensen : 0;
     const afterCosts = gross - churn - flows;
     // contracts take the fee on the whole harvest, which still includes the slice that services vault interest
@@ -269,15 +321,19 @@ export function evaluate(p: Params): ClosedResult {
     const afterCostsUsd = (gross - churn) * t - flowUsd + feeBackUsd;
     const depositFeesPaidUsd = inflow(k) * depositFeeRate;
     const feeUsd = fee * Math.max(0, p.fees.feeBase === "gross" ? gross * t : p.fees.feeBase === "yield" ? afterCostsUsd : afterCostsUsd + mainInterest * t);
-    const entryOneOff = cE * L * v.bandTarget;
-    const exitOneOff = cU * L * v.bandTarget;
+    // a deposit's entry (and an exit's unwind) is repaid from carry before any fee, so the protocol's share bears its part
+    const borne = p.fees.feeBase === "gross" ? 1 : 1 - fee;
+    const entryOneOff = cE * L * v.bandTarget * borne;
+    const exitOneOff = cU * L * v.bandTarget * (1 - headroom[k].share) * borne;
     vaults[k] = {
       key: k,
       name: v.name,
+      on: v.on,
       tvlUsd: tvl(k),
       avgTvlUsd: t,
       bands: br,
       avgLtv: lbar,
+      headroom: headroom[k],
       primeYield,
       loopInterest,
       mainInterest,
@@ -318,13 +374,13 @@ export function evaluate(p: Params): ClosedResult {
         unwindVolume: vol[k].unwind,
       },
     };
-    deskVolume += c.deskCoverage * (vaults[k].usd.entryVolume + (p.improvements.deskBid ? vaults[k].usd.unwindVolume : 0));
+    if (v.on) deskVolume += c.deskCoverage * (vaults[k].usd.entryVolume + (p.improvements.deskBid ? vaults[k].usd.unwindVolume : 0));
   }
 
   // nothing is harvested (or fee'd) until the hole is repaid, so it closes on the vault's pre-fee carry
   const holeDays = spread > 0 ? (365 * cE * L) / spread : Infinity;
-  const entryDays = Math.max(...KEYS.map((k) => vaults[k].breakEvenDays));
-  const roundTripDays = Math.max(...KEYS.map((k) => vaults[k].roundTripDays));
+  const entryDays = KEYS.length ? Math.max(...KEYS.map((k) => vaults[k].breakEvenDays)) : Infinity;
+  const roundTripDays = KEYS.length ? Math.max(...KEYS.map((k) => vaults[k].roundTripDays)) : Infinity;
   const structuralBps = cE * L * 1e4;
   const gate = Math.min(p.policy.admissionBps, p.policy.stopBps);
   if (structuralBps > gate) issues.push(`a fully ramped loop runs ~${structuralBps.toFixed(0)} bps short, past the ${gate} bps deposit gate`);
@@ -360,13 +416,15 @@ export function evaluate(p: Params): ClosedResult {
   const hollarPeak = Math.max(hollarDebt, KEYS.reduce((a, k) => a + L * p.vaults[k].bandTarget * Math.max(tvl(k), growthPath.vaults[k].endUsd), 0));
   if (hollarPeak > p.market.hollarHeadroomUsd) issues.push(`Juicer would borrow ~$${Math.round(hollarPeak / 1e3)}k of HOLLAR, past the $${Math.round(p.market.hollarHeadroomUsd / 1e3)}k the facilitator can still mint`);
   // equityOf includes HOLLAR still waiting to enter, so the hole doesn't jump while an entry is in flight
-  const holeUsd = p.vaults.eth.loopPrincipal + p.vaults.btc.loopPrincipal - Math.max(p.loop.collateralUsd - p.loop.debtUsd, p.vaults.eth.loopEquityUsd + p.vaults.btc.loopEquityUsd);
-  const principal = p.vaults.eth.loopPrincipal + p.vaults.btc.loopPrincipal;
-  const hollarShort = p.loop.debtUsd + p.vaults.eth.mainDebt + p.vaults.btc.mainDebt;
+  const principal = KEYS.reduce((a, k) => a + p.vaults[k].loopPrincipal, 0);
+  const holeUsd = principal - Math.max(p.loop.collateralUsd - p.loop.debtUsd, KEYS.reduce((a, k) => a + p.vaults[k].loopEquityUsd, 0));
+  const hollarShort = p.loop.debtUsd + KEYS.reduce((a, k) => a + p.vaults[k].mainDebt, 0);
+  const exitUsd = KEYS.reduce((a, k) => a + p.vaults[k].outflowRate * size(k), 0);
 
   return {
     lev,
-    rates: { y, rMain, rLoop, spread },
+    active: KEYS,
+    rates: { y, rMain, rLoop, spread, loopDiscounted: discounted },
     scale: { eventUsd, depthUsd, netting },
     costs: c,
     vaults,
@@ -382,6 +440,11 @@ export function evaluate(p: Params): ClosedResult {
       holeUsd,
       holeBps: principal > 0 ? (holeUsd / principal) * 1e4 : 0,
       holeMarketUsd: holeUsd - (1 - p.market.hollarMark) * hollarShort,
+    },
+    exits: {
+      usdPerYear: exitUsd,
+      headroomShare: exitUsd > 0 ? KEYS.reduce((a, k) => a + headroom[k].share * p.vaults[k].outflowRate * size(k), 0) / exitUsd : 0,
+      unwindAvoidedUsd: KEYS.reduce((a, k) => a + L * p.vaults[k].outflowRate * headroom[k].share * size(k) * p.vaults[k].bandTarget, 0),
     },
     protocol: { hollarInterest, collateralFee, lpFees, depositFees, deskSpread, incentiveCost, total, inCollateralShare: total > 0 ? collateralFee / total : 0 },
     hollar: {
@@ -407,3 +470,28 @@ export function evaluate(p: Params): ClosedResult {
     issues,
   };
 }
+
+const phi = (x: number) => {
+  // Abramowitz–Stegun 7.1.26
+  const t = 1 / (1 + 0.3275911 * Math.abs(x) / Math.SQRT2);
+  const erf = 1 - t * (0.254829592 + t * (-0.284496736 + t * (1.421413741 + t * (-1.453152027 + t * 1.061405429)))) * Math.exp(-(x * x) / 2);
+  return 0.5 * (1 + Math.sign(x) * erf);
+};
+
+/** E[min(D, cap)] / E[D] averaged over the horizon, for a debt D that's lognormal around `debt` with the collateral's vol */
+export function cappedShare(debt: number, cap: number, vol: number, years: number): number {
+  if (debt <= 0) return 1;
+  if (cap <= 0) return 0;
+  if (vol <= 0 || years <= 0) return Math.min(1, cap / debt);
+  const n = 8;
+  let sum = 0;
+  for (let i = 0; i < n; i++) {
+    const s = vol * Math.sqrt((years * (i + 0.5)) / n);
+    const d1 = (Math.log(debt / cap) + (s * s) / 2) / s;
+    sum += 1 - (debt * phi(d1) - cap * phi(d1 - s)) / debt;
+  }
+  return sum / n;
+}
+
+/** the worse active vault's value of a per-vault metric */
+export const worst = (r: ClosedResult, f: (v: VaultResult) => number): number => Math.min(...r.active.map((k) => f(r.vaults[k])));

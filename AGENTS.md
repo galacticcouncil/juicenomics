@@ -16,20 +16,20 @@ npm run sim -- link 'https://juicenomics.lark.hydration.cloud/#s=2z…'   # deco
 
 ## Building a config
 
-Options apply in this order, and all of them are optional: `--preset`, then `--link`, `--config file.json`, `--live [--block n]`, `--tvl usd` and `--set path=value` (repeatable). The defaults are Lark 4's settings.
+Options apply in this order, and all of them are optional: `--preset`, then `--link`, `--config file.json`, `--live [--block n]`, `--tvl usd` and `--set path=value` (repeatable). The defaults are Lark 4's settings: the 30 Oct refork runs jBTC alone (`vaults.eth.on=false`; `--preset jeth` adds jETH), with the 65/75/83 band, a 69% fee, 40% / 90% discounts and headroom exits.
 
 - **`--config` file:** either nested params, merged in, or a flat `{"path": value}` map.
-- **`--tvl`:** scales both vaults to a total TVL at today's split. Their chain positions scale with them, and the testnet caps come off.
+- **`--tvl`:** scales the vaults that are on to a total TVL at today's split. Their chain positions scale with them, and the testnet caps come off.
 - **Paths:** use the `path` field from `sim params`, e.g. `vaults.btc.bandLo`. Values are parsed against the parameter's kind.
 - **Validation:** the result is validated. Clamped values and cross-field issues come back in `notes`.
-- **Links:** every result includes `link`, which opens the same config in the web app for humans.
+- **Links:** every result includes `link`, which opens the same config in the web app for humans. Links are versioned: a v1 or v2 link (before the refork) opens with that era's settings, both vaults and no headroom exits.
 
 ## What the numbers mean
 
 - **Units:** rates and APRs are fractions per year (`0.05` = 5%). Costs ending in `Bps` are basis points vs the oracle. Money is USD. A `…Hours` field counts hours over the horizon.
-- **APR:** share value growth in the vault's collateral units (GIGAETH, tBTC), as a log return over the horizon.
+- **APR:** share value growth in the vault's collateral units (GIGAETH, tBTC), as a log return over the horizon. A share is worth what an exit would return, net of the fee on unharvested surplus. A vault that's off reports `NaN` (dropped from `mc`).
 - **Start (`sim.initial`):**
-  - `fresh` (default): the whole TVL ramps at t = 0 and pays its entry, about c·L·ℓ ≈ 1.2% of TVL, inside the horizon.
+  - `fresh` (default): the whole TVL ramps at t = 0 and pays its entry, about c·L·ℓ ≈ 0.84% of TVL at the 1 bp pool fee, inside the horizon. It's repaid from carry before any fee, so depositors bear (1 − f) of it, ≈ 0.26%. At Lark 4's TVL the ramp needs ~590k PRIME, past the arb's 500k inventory: expect about a day of entry stalls.
   - `lark4`: starts from the chain's positions; that ramp was already paid.
   - `ramped`: steady state. Everything is at target, the hole is repaid. Compare long-run economics with this one.
 - **`cf`** is the closed form: instant and steady state. Compare `vaults.*.horizonApr` with Monte Carlo APRs. `net` is the long-run rate.
@@ -38,6 +38,7 @@ Options apply in this order, and all of them are optional: `--preset`, then `--l
   - `hollarDebt*`: HOLLAR the loop and vaults owe.
   - `arbHollarNetUsd`: HOLLAR the outside arbs collect from pool 143 and must sell somewhere. That's Juicer's HOLLAR sell pressure.
   - `deskHollarNetUsd`: what a treasury desk keeps instead.
+  - Exits: `exitsUsd` withdrawn, `headroomExitsUsd` of it settled from headroom (pool these two across paths; `headroomExitShare` is per path and runs high when a path has few exits), `headroomKeptUsd` of loop the stayers kept, `exitWaitHours` from an exit's start to its collateral (headroom exits count zero), `reserveDrawnUsd`, and `ltvAvg*`.
 - **Speed (32-core box, 21 Oct):** about 0.8 ms per path-day per core with the fast pool at today's TVL, and ~3 ms at $5M, which trades more. 64 one-year paths take ~1.2 s on 16 workers. `--exact` uses Hydration's wasm pool, about 2.5× slower.
 - **Determinism:** path i always uses seed (`sim.seed`, i), so a run reproduces whatever the worker count. Change `sim.seed` for an independent sample.
 
@@ -50,6 +51,7 @@ Options apply in this order, and all of them are optional: `--preset`, then `--l
   - Monte Carlo vs closed form, and conservation across configs;
   - both review regression sets;
   - share links and the CLI.
+- **`npx tsx scripts/fit-netting.mts`** refits the closed form's `NETTING` curve to the Monte Carlo (steady state at 1-50× TVL, the 65/75/83 band, a 2 bps pool fee). Rerun it after engine changes that touch trading costs, and keep the scale tests in `test/mc.test.ts` in step.
 - **`npm run sim -- backtest`** samples Lark 4's archive. It replays quiet stretches (hole closure, HF) and deposits (ramp cost) from the chain's own state.
   - On 21 Oct the hole closure matched to −2.2% and HF to 4 decimals.
   - Deposit ramps matched to 147.2–147.9 vs 147.8–147.9 bps of principal.
@@ -57,7 +59,9 @@ Options apply in this order, and all of them are optional: `--preset`, then `--l
 
 ## Gotchas
 
-- **Allowance gap:** the closed form leaves out the execution-cost allowance, ≈ 27 bps of the gross PRIME (≈ 160 bps of principal) kept as surplus. The Monte Carlo includes it and runs about 0.3 pp higher at a flat median price, more on paths where collateral falls.
+- **Allowance gap:** the closed form leaves out the execution-cost allowance, ≈ 27 bps of the gross PRIME (≈ 160 bps of principal) kept as surplus. The Monte Carlo includes it and runs about 0.2 pp higher at a flat median price, more on paths where collateral falls.
+- **Headroom exits:** an exit settles without selling while the vault's LTV after it stays ≤ max LTV − gap; the stayers keep its debt, so their LTV rises and later delevers sell part of what was spared. Big exits on a small vault don't fit: at Lark 4's TVL a quarter of withdrawal dollars settle from headroom, at $2M about 80%. The closed form's share tracks the Monte Carlo's pooled share within ~0.05.
+- **Loop discount cap:** the 90% loop discount covers 5M HOLLAR of loop debt; past ~$1.5M TVL the rest pays the full rate.
 - **Scale:** pool 143 (~$1.07M) and the arb's 500k PRIME inventory don't grow with TVL. Past ~$1M TVL trading costs and stalls rise; use `pool.depth`, the desk, or lower leverage.
 - **HOLLAR:** each $1 deposited borrows about L·ℓ HOLLAR, all of it sold for PRIME. `market.hollarHeadroomUsd` defaults to the mainnet facilitator's headroom (2.13M on 21 Oct), and the closed form flags configs that exceed it.
 - **Growth:** `flows.growth` grows TVL in dollars, so falling prices slow it in the Monte Carlo. The closed form grows it at today's prices.

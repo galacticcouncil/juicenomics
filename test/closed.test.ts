@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { LARK4, clone } from "../src/engine/params/defaults";
 import type { Params } from "../src/engine/params/types";
-import { evaluate } from "../src/engine/model/closedForm";
+import { cappedShare, evaluate } from "../src/engine/model/closedForm";
 import { bands } from "../src/engine/model/bands";
 import { PARAMS } from "../src/engine/params/schema";
 
@@ -13,6 +13,9 @@ function study(over: (p: Params) => void = () => {}): Params {
   p.market.primeYield = 0.0593;
   p.market.hollarRate = 0.044;
   p.fees.feeBase = "gross";
+  p.fees.protocolFeeBps = 500;
+  p.fees.discountMain = 0;
+  p.fees.discountLoop = 0;
   for (const k of ["eth", "btc"] as const) {
     p.vaults[k].vol = 0;
     p.vaults[k].bandTarget = 0.785;
@@ -96,24 +99,60 @@ describe("band churn vs the Monte Carlo of 20 Oct", () => {
 });
 
 describe("defaults", () => {
-  it("derived entry cost at Lark 4 is ~24.5 bps, realistic arb ~28.4 and stalls at the 27 bps cap", () => {
-    const r = evaluate(clone(LARK4));
+  it("derived entry cost is ~24.5 bps at mainnet's 4 bps pool fee, as measured on the 16 Oct Lark 4; realistic arb ~28.4 stalls at the 27 bps cap", () => {
+    const p = clone(LARK4);
+    p.pool.feeBps = 4;
+    const r = evaluate(p);
     expect(r.costs.entryBps).toBeGreaterThan(24);
     expect(r.costs.entryBps).toBeLessThan(25);
     expect(r.costs.stall).toBe(false);
-    const p = clone(LARK4);
     p.arb.mode = "realistic";
     const q = evaluate(p);
     expect(q.costs.entryBps).toBeGreaterThan(27.9);
     expect(q.costs.entryBps).toBeLessThan(28.8);
     expect(q.costs.stall).toBe(true);
   });
-  it("Lark 4 leverage ~6.05× and today's hole ~$1.18k", () => {
+  it("Lark 4's 1 bp launch fee cuts it to ~18.5 bps, and a realistic arb fits under the cap", () => {
+    const r = evaluate(clone(LARK4));
+    expect(LARK4.pool.feeBps).toBe(1);
+    expect(r.costs.entryBps).toBeGreaterThan(18);
+    expect(r.costs.entryBps).toBeLessThan(19);
+    const p = clone(LARK4);
+    p.arb.mode = "realistic";
+    expect(evaluate(p).costs.stall).toBe(false);
+  });
+  it("Lark 4 runs jBTC alone at the release's band, fee and discounts", () => {
+    expect(LARK4.vaults.btc.on).toBe(true);
+    expect(LARK4.vaults.eth.on).toBe(false);
+    expect([LARK4.vaults.btc.bandLo, LARK4.vaults.btc.bandTarget, LARK4.vaults.btc.bandHi]).toEqual([0.65, 0.75, 0.83]);
+    expect(LARK4.fees.protocolFeeBps).toBe(6900);
+    expect([LARK4.fees.discountMain, LARK4.fees.discountLoop, LARK4.fees.loopDiscountCapUsd]).toEqual([0.4, 0.9, 5_000_000]);
+    expect(LARK4.policy.headroomOn).toBe(true);
+    const r = evaluate(clone(LARK4));
+    expect(r.active).toEqual(["btc"]);
+    expect(r.totals.tvlUsd).toBeCloseTo(r.vaults.btc.tvlUsd, 6);
+  });
+  it("Lark 4 leverage ~6.06× and today's hole is principal less equityOf", () => {
     const r = evaluate(clone(LARK4));
     expect(r.lev.L).toBeGreaterThan(6.0);
     expect(r.lev.L).toBeLessThan(6.1);
-    expect(r.lark4Now.holeUsd).toBeGreaterThan(1000);
-    expect(r.lark4Now.holeUsd).toBeLessThan(1400);
+    const v = LARK4.vaults.btc;
+    expect(r.lark4Now.holeUsd).toBeCloseTo(v.loopPrincipal - Math.max(LARK4.loop.collateralUsd - LARK4.loop.debtUsd, v.loopEquityUsd), 6);
+  });
+  it("the loop discount covers only the loop debt under its cap", () => {
+    const p = clone(LARK4);
+    const small = evaluate(p).rates;
+    expect(small.loopDiscounted).toBeCloseTo(1, 6);
+    expect(small.rLoop).toBeCloseTo(p.market.hollarRate * 0.1, 6);
+    p.vaults.btc.units *= 40;
+    p.vaults.btc.capOn = false;
+    const big = evaluate(p).rates;
+    expect(big.loopDiscounted).toBeLessThan(1);
+    expect(big.rLoop).toBeCloseTo(p.market.hollarRate * (1 - 0.9 * big.loopDiscounted), 9);
+    expect(cappedShare(10e6, 5e6, 0, 1)).toBeCloseTo(0.5, 12);
+    expect(cappedShare(10e6, 5e6, 0.4, 1)).toBeLessThan(0.5);
+    expect(cappedShare(4e6, 5e6, 0.4, 1)).toBeLessThan(1);
+    expect(cappedShare(4e6, 5e6, 1e-6, 1)).toBeCloseTo(1, 9);
   });
   it("param codes and paths are unique and every path exists", () => {
     const codes = new Set(PARAMS.map((p) => p.code));
@@ -135,7 +174,7 @@ describe("growth", () => {
     return evaluate(p);
   };
   it("an incumbent pays ln(g) of its entry for pooled exponential growth, not g − 1", () => {
-    const r = grow(10, (p) => { p.costs.churnModel = "constant"; });
+    const r = grow(10, (p) => { p.costs.churnModel = "constant"; p.fees.protocolFeeBps = 0; });
     const want = Math.log(10) * r.vaults.btc.entryOneOff;
     expect(r.vaults.btc.flows).toBeGreaterThan(0.9 * want);
     expect(r.vaults.btc.flows).toBeLessThan(1.1 * want);
@@ -146,7 +185,7 @@ describe("growth", () => {
     expect(r.totals.endTvlUsd / r.totals.tvlUsd).toBeCloseTo(10, 0);
   });
   it("the vault caps stop growth", () => {
-    const r = grow(10, (p) => { for (const k of ["eth", "btc"] as const) p.vaults[k].capOn = true; });
+    const r = grow(10, (p) => { for (const k of ["eth", "btc"] as const) { p.vaults[k].capOn = true; p.vaults[k].on = true; } });
     for (const k of ["eth", "btc"] as const) expect(r.vaults[k].avgTvlUsd).toBeLessThanOrEqual(LARK4.vaults[k].tvlCap * LARK4.vaults[k].price * (1 + 1e-9));
   });
 });

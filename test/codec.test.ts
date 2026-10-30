@@ -31,7 +31,9 @@ describe("share links", () => {
 });
 
 describe("link versions", () => {
-  const v1 = (codes: Record<string, unknown>) => `1j${btoa(JSON.stringify(codes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")}`;
+  const vn = (n: number) => (codes: Record<string, unknown>) => `${n}j${btoa(JSON.stringify(codes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")}`;
+  const v1 = vn(1);
+  const v2 = vn(2);
   it("a v1 link keeps starting from the current state, its old default", async () => {
     const back = await decode(v1({ pf: 2 }));
     expect(back.error).toBeUndefined();
@@ -39,6 +41,30 @@ describe("link versions", () => {
   });
   it("a v1 link that chose a fresh start keeps it", async () => {
     expect((await decode(v1({ si: "fresh" }))).params.sim.initial).toBe("fresh");
+  });
+  it("a v2 link opens with its era's settings: both vaults, the old band and fees, no headroom exits", async () => {
+    const back = await decode(v2({ pf: 2 }));
+    expect(back.error).toBeUndefined();
+    expect(back.era).toBe(2);
+    const p = back.params;
+    expect(p.pool.feeBps).toBe(2);
+    expect(p.vaults.eth.on && p.vaults.btc.on).toBe(true);
+    [0.75, 0.8, 0.83].forEach((x, i) => expect([p.vaults.btc.bandLo, p.vaults.btc.bandTarget, p.vaults.btc.bandHi][i]).toBeCloseTo(x, 9));
+    expect([p.fees.protocolFeeBps, p.fees.discountMain, p.fees.discountLoop]).toEqual([500, 0, 0]);
+    expect(p.policy.headroomOn).toBe(false);
+    expect(p.policy.reserveUsd).toBe(0);
+    expect(p.loop.paceSec).toBe(0);
+    expect(p.sim.initial).toBe("fresh");
+    expect(p.vaults.eth.units).toBeCloseTo(23.07, 2);
+  });
+  it("a v2 link that turned headroom exits on keeps them", async () => {
+    expect((await decode(v2({ xO: true }))).params.policy.headroomOn).toBe(true);
+  });
+  it("a v1 link still reaches the v2 era, from the current state", async () => {
+    const p = (await decode(v1({}))).params;
+    expect(p.sim.initial).toBe("lark4");
+    expect(p.vaults.eth.on).toBe(true);
+    expect(p.fees.protocolFeeBps).toBe(500);
   });
   it("new links start fresh unless they say otherwise", async () => {
     expect(LARK4.sim.initial).toBe("fresh");

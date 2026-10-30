@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { evaluate } from "../../engine/model/closedForm";
+import { evaluate, worst } from "../../engine/model/closedForm";
 import { KNOB, KNOBS, METRIC, METRICS, feasibleWith, grid, pareto, search, sweep, tornado, withKnob, type Candidate, type Constraints } from "../../engine/opt/explore";
 import type { Params } from "../../engine/params/types";
 import { Heatmap, Tornado } from "../charts/Svg";
@@ -107,7 +107,7 @@ function Scatter({ cands, front, onPick }: { cands: Candidate[]; front: Candidat
   const pad = { l: 64, r: 12, t: 10, b: 40 };
   const pts = cands.filter((c) => c.feasible);
   if (!pts.length) return <p className="muted">no feasible point: loosen the constraints</p>;
-  const xs = pts.map((c) => Math.min(c.result.vaults.eth.net, c.result.vaults.btc.net));
+  const xs = pts.map((c) => worst(c.result, (v) => v.net));
   const ys = pts.map((c) => c.result.protocol.total);
   const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
   const sx = (v: number) => pad.l + ((v - x0) / (x1 - x0 || 1)) * (W - pad.l - pad.r);
@@ -181,20 +181,19 @@ function FindBest({ p, onApply, cons, setCons }: { p: Params; onApply: (p: Param
         <>
           <h3>Best found</h3>
           <table className="grid">
-            <thead><tr><th>#</th>{res.knobs.map((k) => <th key={k.key} className="num">{k.label}</th>)}<th className="num">jETH</th><th className="num">jBTC</th><th className="num">break-even</th><th className="num">protocol / yr</th><th /></tr></thead>
+            <thead><tr><th>#</th>{res.knobs.map((k) => <th key={k.key} className="num">{k.label}</th>)}{base.active.map((k) => <th key={k} className="num">{base.vaults[k].name}</th>)}<th className="num">break-even</th><th className="num">protocol / yr</th><th /></tr></thead>
             <tbody>
               {res.best.map((c, i) => (
                 <tr key={i}>
                   <td>{i + 1}</td>
                   {res.knobs.map((k) => <td key={k.key} className="num">{fmtKnob(k)(c.values[k.key])}</td>)}
-                  <td className="num">{fmtPct(c.result.vaults.eth.net)}</td>
-                  <td className="num">{fmtPct(c.result.vaults.btc.net)}</td>
+                  {base.active.map((k) => <td key={k} className="num">{fmtPct(c.result.vaults[k].net)}</td>)}
                   <td className="num">{fmtDays(c.result.breakEven.entryDays)}</td>
                   <td className="num">{fmtUsd(c.result.protocol.total)}</td>
                   <td><button onClick={() => onApply(c.params)}>apply</button></td>
                 </tr>
               ))}
-              {!res.best.length && <tr><td colSpan={res.knobs.length + 6} className="muted">no feasible scenario under these constraints</td></tr>}
+              {!res.best.length && <tr><td colSpan={res.knobs.length + base.active.length + 4} className="muted">no feasible scenario under these constraints</td></tr>}
             </tbody>
           </table>
           <h3>Depositors vs protocol trade-off</h3>

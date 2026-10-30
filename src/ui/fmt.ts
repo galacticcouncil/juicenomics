@@ -45,7 +45,7 @@ export const fmtNum = (n: number | undefined, d = 2): string => {
 export const toDisplay = (unit: Unit | undefined, v: number): number => (unit === "pct" ? v * 100 : v);
 export const fromDisplay = (unit: Unit | undefined, v: number): number => (unit === "pct" ? v / 100 : v);
 export const unitLabel = (unit?: Unit): string =>
-  ({ pct: "%", bps: "bps", usd: "$", x: "×", days: "d", hours: "h", units: "", num: "", price: "$", minutes: "min" })[unit ?? "num"] ?? "";
+  ({ pct: "%", bps: "bps", usd: "$", x: "×", days: "d", hours: "h", units: "", num: "", price: "$", minutes: "min", seconds: "s" })[unit ?? "num"] ?? "";
 
 export const fmtMetric = (m: Metric) => (v: number) => (m.unit === "pct" ? fmtPct(v) : m.unit === "usd" ? fmtUsd(v) : m.unit === "days" ? fmtDays(v) : fmtBps(v, 0));
 export const fmtKnob = (k: Knob) => (v: number) =>

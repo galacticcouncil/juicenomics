@@ -2,17 +2,18 @@
 
 Formerly juicer-sim; `https://juicer-sim.lark.hydration.cloud` links redirect here.
 
-Economics dashboard for Juicer, Hydration's leveraged PRIME loop vaults (jETH, jBTC).
+Economics dashboard for Juicer, Hydration's leveraged PRIME loop vaults: jBTC, and jETH as an option.
 
-- **What it covers:** every protocol, market and improvement setting has a control. Defaults are the live Lark 4 configuration. A config is shareable as a link.
+- **What it covers:** every protocol, market and improvement setting has a control. Defaults are the live Lark 4 configuration: the 30 Oct refork runs jBTC alone with headroom exits on, so jETH starts switched off. A config is shareable as a link; links from before the refork open with their own era's settings.
 - **Closed form:** the Overview, Explore and Compare tabs recompute on every change. It covers:
   - net APR per vault, break-even, leverage and liquidation distance;
   - the structural deficit and the deposit gates;
   - protocol revenue and who gets the PRIME yield;
-  - rebalance churn from band geometry, with buys and sells netting out in pool 143.
+  - rebalance churn from band geometry, with buys and sells netting out in pool 143;
+  - the share of exits that settle from LTV headroom, and the leverage that shifts to the holders who stay.
 - **Monte Carlo:** the Simulation tab runs it in web workers.
   - It steps hourly through pool 143's stableswap math (float mirror or Hydration's wasm) with an outside arb that has finite inventory.
-  - It also models keeper rebalances, harvests with Main interest servicing, deposit stops and flows.
+  - It also models keeper rebalances, harvests with Main interest servicing, deposit stops, lane pacing, flows, and headroom exits with the protocol reserve behind their shortfalls.
   - It reports fans, distributions and per-cohort returns.
 - **Explore:** a sweep, a two-setting heatmap, sensitivity bars, and a constrained search with a depositor vs protocol Pareto front.
 

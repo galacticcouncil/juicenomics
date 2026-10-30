@@ -1,21 +1,26 @@
-import type { ClosedResult } from "../../engine/model/closedForm";
+import type { ClosedResult, VaultResult } from "../../engine/model/closedForm";
 import { PARAMS, getPath } from "../../engine/params/schema";
-import type { Params } from "../../engine/params/types";
+import type { Params, VaultKey } from "../../engine/params/types";
 import { Waterfall } from "../charts/Svg";
 import { fmtBps, fmtDays, fmtNum, fmtPct, fmtUsd, fmtX, toDisplay, unitLabel } from "../fmt";
 
-const ROWS: { label: string; of: (r: ClosedResult) => number; fmt: (v: number) => string; better: "high" | "low" }[] = [
-  { label: "jETH net APR", of: (r) => r.vaults.eth.net, fmt: (v) => fmtPct(v), better: "high" },
-  { label: "jBTC net APR", of: (r) => r.vaults.btc.net, fmt: (v) => fmtPct(v), better: "high" },
-  { label: "jETH first year", of: (r) => r.vaults.eth.year1, fmt: (v) => fmtPct(v), better: "high" },
-  { label: "jBTC first year", of: (r) => r.vaults.btc.year1, fmt: (v) => fmtPct(v), better: "high" },
+type Row = { label: string; of: (r: ClosedResult) => number; fmt: (v: number) => string; better: "high" | "low"; vault?: VaultKey };
+const vaultRow = (k: VaultKey, label: string, of: (v: VaultResult) => number, fmt: (v: number) => string, better: "high" | "low"): Row =>
+  ({ label: `${k === "eth" ? "jETH" : "jBTC"} ${label}`, of: (r) => (r.vaults[k].on ? of(r.vaults[k]) : NaN), fmt, better, vault: k });
+
+const ROWS: Row[] = [
+  vaultRow("eth", "net APR", (v) => v.net, (v) => fmtPct(v), "high"),
+  vaultRow("btc", "net APR", (v) => v.net, (v) => fmtPct(v), "high"),
+  vaultRow("eth", "first year", (v) => v.year1, (v) => fmtPct(v), "high"),
+  vaultRow("btc", "first year", (v) => v.year1, (v) => fmtPct(v), "high"),
   { label: "entry break-even (days)", of: (r) => r.breakEven.entryDays, fmt: fmtDays, better: "low" },
   { label: "round-trip break-even (days)", of: (r) => r.breakEven.roundTripDays, fmt: fmtDays, better: "low" },
   { label: "leverage", of: (r) => r.lev.L, fmt: (v) => fmtX(v), better: "high" },
   { label: "PRIME drop to liquidation", of: (r) => r.lev.liqDrop, fmt: (v) => fmtPct(v, 1), better: "high" },
   { label: "entry cost", of: (r) => r.costs.entryBps, fmt: (v) => fmtBps(v), better: "low" },
-  { label: "rebalance churn jETH", of: (r) => r.vaults.eth.churn, fmt: (v) => fmtPct(v), better: "low" },
-  { label: "rebalance churn jBTC", of: (r) => r.vaults.btc.churn, fmt: (v) => fmtPct(v), better: "low" },
+  vaultRow("eth", "rebalance churn", (v) => v.churn, (v) => fmtPct(v), "low"),
+  vaultRow("btc", "rebalance churn", (v) => v.churn, (v) => fmtPct(v), "low"),
+  { label: "exits settled from headroom", of: (r) => r.exits.headroomShare, fmt: (v) => fmtPct(v, 0), better: "high" },
   { label: "deficit when ramped", of: (r) => r.deficit.structuralBps, fmt: (v) => fmtBps(v, 0), better: "low" },
   { label: "protocol revenue / yr", of: (r) => r.protocol.total, fmt: (v) => fmtUsd(v), better: "high" },
   { label: "… in collateral", of: (r) => r.protocol.collateralFee, fmt: (v) => fmtUsd(v), better: "high" },
@@ -47,12 +52,12 @@ export function Compare({ A, B, rA, rB, onMakeB }: { A: Params; B: Params | null
           <table className="grid">
             <thead><tr><th>metric</th><th className="num">A</th><th className="num">B</th><th className="num">B − A</th></tr></thead>
             <tbody>
-              {ROWS.map((row) => {
+              {ROWS.filter((row) => !row.vault || A.vaults[row.vault].on || B.vaults[row.vault].on).map((row) => {
                 const a = row.of(rA);
                 const b = row.of(rB);
                 const d = b - a;
                 const good = row.better === "high" ? d > 0 : d < 0;
-                const same = Math.abs(d) < 1e-9 * Math.max(1, Math.abs(a));
+                const same = Math.abs(d) < 1e-9 * Math.max(1, Math.abs(a)) || (Number.isNaN(a) && Number.isNaN(b));
                 return (
                   <tr key={row.label}>
                     <td>{row.label}</td>
@@ -79,13 +84,13 @@ export function Compare({ A, B, rA, rB, onMakeB }: { A: Params; B: Params | null
             </tbody>
           </table>
         </div>
-        {(["eth", "btc"] as const).map((k) => (
+        {(["eth", "btc"] as const).filter((k) => A.vaults[k].on || B.vaults[k].on).map((k) => (
           <div className="card" key={k}>
             <h2>{rA.vaults[k].name}: A vs B</h2>
-            <h3>A</h3>
-            <Waterfall steps={rA.vaults[k].waterfall} height={180} color="var(--series-1)" />
-            <h3>B</h3>
-            <Waterfall steps={rB.vaults[k].waterfall} height={180} color="var(--series-2)" />
+            <h3>A{A.vaults[k].on ? "" : " (off)"}</h3>
+            {A.vaults[k].on && <Waterfall steps={rA.vaults[k].waterfall} height={180} color="var(--series-1)" />}
+            <h3>B{B.vaults[k].on ? "" : " (off)"}</h3>
+            {B.vaults[k].on && <Waterfall steps={rB.vaults[k].waterfall} height={180} color="var(--series-2)" />}
           </div>
         ))}
       </div>

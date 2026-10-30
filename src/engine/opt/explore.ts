@@ -1,4 +1,4 @@
-import { evaluate, type ClosedResult } from "../model/closedForm";
+import { evaluate, worst, type ClosedResult } from "../model/closedForm";
 import { LARK4 } from "../params/defaults";
 import { BY_PATH, getPath, setPath } from "../params/schema";
 import type { Params } from "../params/types";
@@ -12,7 +12,7 @@ export interface Metric {
 }
 
 export const METRICS: Metric[] = [
-  { key: "worst", label: "user APR, worse vault", unit: "pct", better: "high", of: (r) => Math.min(r.vaults.eth.net, r.vaults.btc.net) },
+  { key: "worst", label: "user APR, worse vault", unit: "pct", better: "high", of: (r) => worst(r, (v) => v.net) },
   { key: "weighted", label: "user APR, TVL-weighted", unit: "pct", better: "high", of: (r) => r.totals.userAprWeighted },
   { key: "eth", label: "jETH user APR", unit: "pct", better: "high", of: (r) => r.vaults.eth.net },
   { key: "btc", label: "jBTC user APR", unit: "pct", better: "high", of: (r) => r.vaults.btc.net },
@@ -20,11 +20,12 @@ export const METRICS: Metric[] = [
   { key: "protocolPct", label: "protocol revenue, % of TVL", unit: "pct", better: "high", of: (r) => (r.totals.avgTvlUsd > 0 ? r.protocol.total / r.totals.avgTvlUsd : 0) },
   { key: "breakEven", label: "entry break-even", unit: "days", better: "low", of: (r) => r.breakEven.entryDays },
   { key: "deficit", label: "structural deficit", unit: "bps", better: "low", of: (r) => r.deficit.structuralBps },
-  { key: "churn", label: "rebalance churn, worse vault", unit: "pct", better: "low", of: (r) => Math.max(r.vaults.eth.churn, r.vaults.btc.churn) },
+  { key: "churn", label: "rebalance churn, worse vault", unit: "pct", better: "low", of: (r) => -worst(r, (v) => -v.churn) },
+  { key: "headroom", label: "exits settled from headroom", unit: "pct", better: "high", of: (r) => r.exits.headroomShare },
 ];
 export const METRIC = new Map(METRICS.map((m) => [m.key, m]));
 
-/** knobs the explorer can move; "both vaults" knobs set the same value on jETH and jBTC */
+/** knobs the explorer can move; "every vault" knobs set the same value on jETH and jBTC */
 export interface Knob {
   key: string;
   label: string;
@@ -59,7 +60,7 @@ const pathKnob = (path: string, min?: number, max?: number): Knob => {
 };
 
 const bothVaults = (key: string, label: string, min: number, max: number, get: (p: Params) => number, set: (p: Params, v: number) => void): Knob => ({
-  key, label, unit: "pct", min, max, lever: "contract", get, set,
+  key, label, unit: "pct", min, max, lever: "admin", get, set,
 });
 
 export const KNOBS: Knob[] = [
@@ -68,7 +69,7 @@ export const KNOBS: Knob[] = [
     get: (p) => (p.loop.mode === "lev" ? p.loop.leverage : 1 / (1 - p.loop.primeLt / (p.loop.targetHf + p.loop.hfLag))),
     set: (p, v) => { p.loop.mode = "lev"; p.loop.leverage = v; },
   },
-  bothVaults("bands.target", "Target LTV (both vaults)", 0.5, 0.8, (p) => p.vaults.btc.bandTarget, (p, v) => {
+  bothVaults("bands.target", "Target LTV (every vault)", 0.5, 0.8, (p) => p.vaults.btc.bandTarget, (p, v) => {
     for (const k of ["eth", "btc"] as const) {
       const gapLo = p.vaults[k].bandTarget - p.vaults[k].bandLo;
       const gapHi = p.vaults[k].bandHi - p.vaults[k].bandTarget;
@@ -87,6 +88,7 @@ export const KNOBS: Knob[] = [
   pathKnob("fees.protocolFeeBps", 0, 9000),
   pathKnob("fees.discountMain", 0, 1),
   pathKnob("fees.discountLoop", 0, 1),
+  pathKnob("policy.headroomOn", 0, 1),
   pathKnob("improvements.desk", 0, 1),
   pathKnob("improvements.deskSpreadBps", 0, 15),
   pathKnob("improvements.incentiveBps", 0, 300),
@@ -183,7 +185,7 @@ export interface Constraints {
 
 export function feasibleWith(c: Constraints) {
   return (r: ClosedResult) =>
-    Math.min(r.vaults.eth.net, r.vaults.btc.net) >= c.minUserApr &&
+    worst(r, (v) => v.net) >= c.minUserApr &&
     (r.totals.avgTvlUsd > 0 ? r.protocol.total / r.totals.avgTvlUsd : 0) >= c.minProtocolPct &&
     r.breakEven.entryDays <= c.maxBreakEvenDays &&
     (!c.noStall || !r.costs.stall) &&
@@ -275,7 +277,7 @@ export function search(p: Params, knobs: Knob[], metric: Metric, cons: Constrain
 
 /** non-dominated points on (user APR of the worse vault, protocol revenue) */
 export function pareto(cands: Candidate[]): Candidate[] {
-  const pts = cands.filter((c) => c.feasible).map((c) => ({ c, x: Math.min(c.result.vaults.eth.net, c.result.vaults.btc.net), y: c.result.protocol.total }));
+  const pts = cands.filter((c) => c.feasible).map((c) => ({ c, x: worst(c.result, (v) => v.net), y: c.result.protocol.total }));
   return pts.filter((a) => !pts.some((b) => b !== a && b.x >= a.x && b.y >= a.y && (b.x > a.x || b.y > a.y))).sort((a, b) => a.x - b.x).map((a) => a.c);
 }
 

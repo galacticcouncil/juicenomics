@@ -5,7 +5,7 @@ import { PRESETS, preset } from "./engine/params/presets";
 import { setPath } from "./engine/params/schema";
 import type { Params } from "./engine/params/types";
 import { validate } from "./engine/params/validate";
-import { LEGACY_DEFAULTS, decode, encode } from "./engine/share/codec";
+import { VERSION, decode, encode, eraDefaults } from "./engine/share/codec";
 import { ParamPanel } from "./ui/params/ParamPanel";
 import { Overview } from "./ui/views/Overview";
 import { Compare } from "./ui/views/Compare";
@@ -43,19 +43,21 @@ export default function App() {
   useEffect(() => {
     (async () => {
       const h = readHash();
-      // an omitted A means the defaults of its link's era, which a version-1 B gives away
-      const legacyA = !h.s && Number.parseInt(h.b ?? "", 10) === 1;
-      const token = h.s ?? (location.hash ? (legacyA ? LEGACY_DEFAULTS : "") : localStorage.getItem("js:last") ?? "");
+      // an omitted A means the defaults of its link's era, which an older B gives away
+      const eraB = Number.parseInt(h.b ?? "", 10);
+      const legacyA = !h.s && eraB < VERSION;
+      const token = h.s ?? (location.hash ? (legacyA ? eraDefaults(eraB) : "") : localStorage.getItem("js:last") ?? "");
       const a = await decode(token);
       const notes: string[] = [];
       if (a.error) notes.push(`could not read the shared config (${a.error}); showing Lark 4 defaults`);
+      if (a.era) notes.push(`this ${location.hash ? "link" : "saved session"} predates the 30 Oct Lark 4 refork (jBTC alone, headroom exits): it opens with the settings it was made with, jETH included; reset to Lark 4 for today's`);
       if (a.ignored.length) notes.push(`ignored unknown settings: ${a.ignored.join(", ")}`);
       if (a.clamped.length) notes.push(`clamped into range: ${a.clamped.join(", ")}`);
       setA(a.params);
       if (h.b) {
         // "0" was the unversioned default-B marker: it means the defaults of the era its link came from
         const era = Number.parseInt(h.s ?? "", 10);
-        const b = await decode(h.b === "0" ? (era === 1 ? LEGACY_DEFAULTS : "") : h.b);
+        const b = await decode(h.b === "0" ? (era < VERSION ? eraDefaults(era) : "") : h.b);
         if (b.error) notes.push(`could not read scenario B (${b.error}); showing Lark 4 defaults there`);
         setB(b.params);
       }

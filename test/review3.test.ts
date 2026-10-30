@@ -59,6 +59,7 @@ it("gross fees on cash-matched exits include the claimant's prior entry costs", 
 it("interest on stalled exit debt is included in protocol revenue", () => {
   const p = clone(LARK4);
   p.sim.initial = "lark4";
+  p.policy.headroomOn = false;
   p.sim.horizonDays = 90;
   p.market.primeYield = 0;
   p.market.hollarRate = 0.1;

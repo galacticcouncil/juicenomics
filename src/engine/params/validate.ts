@@ -28,8 +28,10 @@ export function validate(input: Params): Validated {
     clamped.push("Time step (to a whole fraction of a day)");
   }
   const issues: string[] = [];
+  if (!p.vaults.eth.on && !p.vaults.btc.on) issues.push("turn on at least one vault");
   for (const k of ["eth", "btc"] as VaultKey[]) {
     const v = p.vaults[k];
+    if (!v.on) continue;
     if (!(v.bandLo < v.bandTarget && v.bandTarget < v.bandHi)) issues.push(`${v.name}: bands must satisfy relever < target < delever`);
     if (v.bandHi >= v.lt) issues.push(`${v.name}: delever level must stay below the ${(v.lt * 100).toFixed(0)}% liquidation threshold`);
   }

@@ -1,5 +1,5 @@
 // headless juicenomics for scripts and agents: every command prints one JSON document on stdout
-import { evaluate, type ClosedResult } from "../src/engine/model/closedForm";
+import { evaluate, worst, type ClosedResult } from "../src/engine/model/closedForm";
 import { KNOBS, KNOB, METRIC, METRICS, pareto, search, type Constraints, type Knob } from "../src/engine/opt/explore";
 import { LARK4, SNAPSHOT } from "../src/engine/params/defaults";
 import { PRESETS } from "../src/engine/params/presets";
@@ -33,7 +33,7 @@ commands
 
 config (applied in this order, all optional)
   --preset key | --link <share url or token> | --config file.json (nested params or {"path": value})
-  --live [--block n]    start from the chain's state      --tvl usd   scale both vaults to a total TVL
+  --live [--block n]    start from the chain's state      --tvl usd   scale the vaults that are on to a total TVL
   --set path=value      any parameter, repeatable (see: params)
   --pretty              indent the JSON
 
@@ -49,13 +49,13 @@ const out = (a: Args, x: unknown) => process.stdout.write(`${JSON.stringify(x, (
 export function cfSummary(r: ClosedResult) {
   const v = (k: "eth" | "btc") => {
     const x = r.vaults[k];
-    return { tvlUsd: x.tvlUsd, avgTvlUsd: x.avgTvlUsd, net: x.net, horizonApr: x.horizonApr, year1: x.year1, gross: x.gross, churn: x.churn, flows: x.flows, feeTaken: x.feeTaken, avgLtv: x.avgLtv, breakEvenDays: x.breakEvenDays, rebalancesPerYear: x.bands.eventsPerYear };
+    return { tvlUsd: x.tvlUsd, avgTvlUsd: x.avgTvlUsd, net: x.net, horizonApr: x.horizonApr, year1: x.year1, gross: x.gross, churn: x.churn, flows: x.flows, feeTaken: x.feeTaken, avgLtv: x.avgLtv, breakEvenDays: x.breakEvenDays, rebalancesPerYear: x.bands.eventsPerYear, headroomShare: x.headroom.share };
   };
   return {
     leverage: r.lev.L, hfEff: r.lev.hfEff, liqDrop: r.lev.liqDrop,
     entryBps: r.costs.entryBps, unwindBps: r.costs.unwindBps, stall: r.costs.stall, deskCoverage: r.costs.deskCoverage,
-    vaults: { eth: v("eth"), btc: v("btc") },
-    breakEven: r.breakEven, deficit: r.deficit, protocol: r.protocol, hollar: r.hollar, totals: r.totals, scale: r.scale, issues: r.issues,
+    vaults: Object.fromEntries(r.active.map((k) => [k, v(k)])),
+    rates: r.rates, breakEven: r.breakEven, deficit: r.deficit, exits: r.exits, protocol: r.protocol, hollar: r.hollar, totals: r.totals, scale: r.scale, issues: r.issues,
   };
 }
 
@@ -148,11 +148,11 @@ async function main() {
       const row: Record<string, unknown> = { values: c.values, score: c.score, cf: cfSummary(c.result), link: await link(c.params) };
       if (verify) {
         const run = await runMc(c.params, { paths: verify });
-        row.mc = summarize(run.summaries, ["aprEth", "aprBtc", "protocol", "entryAvgBps", "unwindAvgBps", "stallHours", "unwindStallHours", "arbDryHours", "stopHoursEth", "stopHoursBtc", "minHf", "hollarDebtPeakUsd", "arbHollarNetUsd", "conservationGapUsd"]);
+        row.mc = summarize(run.summaries, ["aprEth", "aprBtc", "protocol", "headroomExitShare", "exitWaitHours", "entryAvgBps", "unwindAvgBps", "stallHours", "unwindStallHours", "arbDryHours", "stopHoursEth", "stopHoursBtc", "minHf", "hollarDebtPeakUsd", "arbHollarNetUsd", "conservationGapUsd"]);
       }
       rows.push(row);
     }
-    const front = pareto(res.all.filter((c) => c.feasible)).slice(0, 40).map((c) => ({ worst: Math.min(c.result.vaults.eth.net, c.result.vaults.btc.net), protocol: c.result.protocol.total, values: c.values }));
+    const front = pareto(res.all.filter((c) => c.feasible)).slice(0, 40).map((c) => ({ worst: worst(c.result, (v) => v.net), protocol: c.result.protocol.total, values: c.values }));
     return out(a, { notes, knobs: knobs.map((k) => k.key), metric: metric.key, constraints: cons, feasible: res.all.filter((c) => c.feasible).length, evaluated: res.all.length, best: rows, front });
   }
   throw new Error(`unknown command ${cmd} (try: npm run sim -- help)`);

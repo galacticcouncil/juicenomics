@@ -38,7 +38,11 @@ export function aggregate(results: { series: Float32Array; days: number; summary
     bands[key] = qs;
   });
   // the path whose average vault APR is the median
-  const order = results.map((r, i) => ({ i, v: (r.summary.aprEth + r.summary.aprBtc) / 2 })).sort((a, b) => a.v - b.v);
+  const avg = (s: PathSummary) => {
+    const xs = [s.aprEth, s.aprBtc].filter(Number.isFinite);
+    return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0;
+  };
+  const order = results.map((r, i) => ({ i, v: avg(r.summary) })).sort((a, b) => a.v - b.v);
   const mid = results[order[Math.floor(order.length / 2)]?.i ?? 0];
   const median: Record<string, Float64Array> = {};
   SERIES.forEach((key, j) => {
@@ -50,6 +54,6 @@ export function aggregate(results: { series: Float32Array; days: number; summary
 }
 
 export function stat(values: number[]): { p5: number; p50: number; p95: number; mean: number } {
-  const s = [...values].sort((a, b) => a - b);
-  return { p5: quantile(s, 0.05), p50: quantile(s, 0.5), p95: quantile(s, 0.95), mean: s.reduce((a, b) => a + b, 0) / Math.max(1, s.length) };
+  const s = values.filter(Number.isFinite).sort((a, b) => a - b);
+  return { p5: quantile(s, 0.05), p50: quantile(s, 0.5), p95: quantile(s, 0.95), mean: s.length ? s.reduce((a, b) => a + b, 0) / s.length : NaN };
 }

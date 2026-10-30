@@ -3,27 +3,34 @@ import type { Params, VaultParams } from "./types";
 
 const v = lark4.vaults;
 
-const vault = (key: "eth" | "btc", vol: number, inKindYield: number): VaultParams => ({
-  name: v[key].name,
-  collateral: v[key].collateral,
-  units: v[key].units,
-  price: v[key].price,
-  vol,
-  drift: 0,
-  inKindYield,
-  maxLtv: v[key].ltv,
-  lt: v[key].lt,
-  bandLo: v[key].ltv - 0.05,
-  bandTarget: v[key].ltv,
-  bandHi: v[key].ltv + 0.03,
-  capOn: true,
-  tvlCap: v[key].tvlCap,
-  inflowUsd: 0,
-  outflowRate: 0,
-  mainDebt: v[key].mainDebt,
-  loopPrincipal: v[key].loopPrincipal,
-  loopEquityUsd: v[key].loopEquityUsd,
-});
+// SubLoop.rebalanceBand gaps, bps off the collateral's max LTV
+const bp = (x: number) => Math.round(x * 1e4) / 1e4;
+const vault = (key: "eth" | "btc", vol: number, inKindYield: number): VaultParams => {
+  const s = v[key];
+  const target = bp(s.ltv - s.band.targetGap / 1e4);
+  return {
+    on: s.deployed,
+    name: s.name,
+    collateral: s.collateral,
+    units: s.units,
+    price: s.price,
+    vol,
+    drift: 0,
+    inKindYield,
+    maxLtv: s.ltv,
+    lt: s.lt,
+    bandLo: bp(target - s.band.relever / 1e4),
+    bandTarget: target,
+    bandHi: bp(target + s.band.delever / 1e4),
+    capOn: true,
+    tvlCap: s.tvlCap,
+    inflowUsd: 0,
+    outflowRate: 0,
+    mainDebt: s.mainDebt,
+    loopPrincipal: s.loopPrincipal,
+    loopEquityUsd: s.loopEquityUsd,
+  };
+};
 
 // the live Lark 4 configuration; vols and the PRIME yield come from a year of mainnet oracle history
 export const LARK4: Params = Object.freeze({
@@ -53,6 +60,7 @@ export const LARK4: Params = Object.freeze({
     laneCapBps: 27,
     budgetCap: 25_000,
     budgetRefillPerSec: 50,
+    paceSec: 60,
     collateralUsd: lark4.loop.collateralUsd,
     debtUsd: lark4.loop.debtUsd,
   },
@@ -78,9 +86,10 @@ export const LARK4: Params = Object.freeze({
   },
   costs: { mode: "derived", entryBps: 24.5, unwindBps: 8.5, harvestSwapBps: 20, churnModel: "pool" },
   fees: {
-    protocolFeeBps: v.eth.protocolFeeBps,
-    discountMain: lark4.discountBps / 1e4,
-    discountLoop: 0,
+    protocolFeeBps: v.btc.protocolFeeBps,
+    discountMain: lark4.discount.mainBps / 1e4,
+    discountLoop: lark4.discount.loopBps / 1e4,
+    loopDiscountCapUsd: lark4.discount.loopCap,
     feeBase: "contract",
   },
   depositFee: { on: false, auto: false, bps: 0, dest: "loop" },
@@ -100,15 +109,19 @@ export const LARK4: Params = Object.freeze({
     admissionBps: lark4.loop.admissionMaxDeficitBps,
     stopBps: 250,
     resumeBps: 200,
-    cooldownHours: v.eth.withdrawalDelay / 3600,
+    cooldownHours: v.btc.withdrawalDelay / 3600,
     harvestThresholdBps: lark4.loop.harvestThreshold * 1e4,
     costReserveBps: lark4.loop.dcaSlippagePpm / 100,
+    headroomOn: v.btc.exitHeadroom.enabled,
+    headroomGapBps: v.btc.exitHeadroom.gapBps,
+    // what each Main ledger was funded with; a live load reads what is left
+    reserveUsd: 1000,
   },
   flows: { growth: "none", growthFactor: 1, sizeMedianUsd: 5_000, sizeSigma: 1.2 },
   sim: { horizonDays: 365, stepHours: 1, paths: 200, seed: 7, poolMode: "fast", initial: "fresh", stateBlock: lark4.evmBlock },
 }) as Params;
 
-export const SNAPSHOT = { evmBlock: lark4.evmBlock, timestamp: lark4.timestamp, source: lark4.source, pegs: lark4.pool143.pegs };
+export const SNAPSHOT = { evmBlock: lark4.evmBlock, timestamp: lark4.timestamp, source: lark4.source, genesis: lark4.genesis, pegs: lark4.pool143.pegs };
 
 export function clone<T>(x: T): T {
   return structuredClone(x);

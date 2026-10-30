@@ -35,7 +35,7 @@ export function LiveLoader({ p, onApply, onLoaded }: { p: Params; onApply: (p: P
           </select></label>
           <label>rpc <input className="search" value={url} onChange={(e) => setUrl(e.target.value)} /></label>
           <p className="small muted">
-            Reads the loop, both vaults, pool 143, prices, rates, contract settings and PRIME's 7-day yield at the chain head, into the scenario you're editing. Your other settings stay. The share link then carries this state.
+            Reads the loop, the deployment's vaults, pool 143, prices, rates, contract settings (bands, headroom exits, fee, discounts, reserve) and PRIME's 7-day yield at the chain head, into the scenario you're editing. A vault the deployment doesn't run keeps its switch, with no chain state. Your other settings stay. The share link then carries this state.
           </p>
           <button className="primary" disabled={busy} onClick={run}>{busy ? "reading…" : "load"}</button>
           {error && <p className="small" style={{ color: "var(--critical)" }}>{error}</p>}

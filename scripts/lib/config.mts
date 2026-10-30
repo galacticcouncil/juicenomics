@@ -56,10 +56,10 @@ export function parseValue(path: string, raw: string): unknown {
   return raw;
 }
 
-/** both vaults to a total TVL at today's split; their chain positions scale with them and the caps come off */
+/** the vaults that are on to a total TVL at today's split; their chain positions scale with them and the caps come off */
 export function scaleTvl(p: Params, totalUsd: number): Params {
   const q = clone(p);
-  const keys: VaultKey[] = ["eth", "btc"];
+  const keys = (["eth", "btc"] as VaultKey[]).filter((k) => q.vaults[k].on);
   const cur = keys.reduce((a, k) => a + q.vaults[k].units * q.vaults[k].price, 0);
   const m = cur > 0 ? totalUsd / cur : 1;
   for (const k of keys) {

@@ -26,6 +26,7 @@ it("fast and exact execution agree on a full default path", () => {
 
 it("a queued withdrawal retains its value until it settles", () => {
   const p = clone(LARK4);
+  p.vaults.eth.on = true;
   p.sim.initial = "fresh";
   p.sim.horizonDays = 30;
   p.loop.mode = "lev";

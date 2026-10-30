@@ -11,7 +11,9 @@ export interface Deployment {
   feeController: Hex;
   discount: Hex;
   hollar: Hex;
-  vaults: Record<VaultKey, { address: Hex; asset: number }>;
+  vaults: Partial<Record<VaultKey, { address: Hex; asset: number }>>;
+  /** read for price and reserve config even where the deployment has no such vault */
+  assets: Record<VaultKey, number>;
 }
 
 const token = (id: number) => `0x${(0x100000000n + BigInt(id)).toString(16).padStart(40, "0")}` as Hex;
@@ -19,18 +21,16 @@ const token = (id: number) => `0x${(0x100000000n + BigInt(id)).toString(16).padS
 export const DEPLOYMENTS: Deployment[] = [
   {
     key: "lark4",
-    label: "Lark 4 (testnet)",
+    label: "Lark 4 (testnet, jBTC only)",
     rpc: "https://node4.lark.hydration.cloud",
     subLoop: "0xe0983cedd797b38090e6dcde54af88aa6eb22edc",
     aavePool: "0x1b02E051683b5cfaC5929C25E84adb26ECf87B38",
     oracle: "0xAD33C0F0C42C5A0EAA65b5895D2BdB20cb6E8760",
     feeController: "0xa64e418978482d5de91717cf6c77e1f40105f2ab",
-    discount: "0x423e733c04e94f689f2dcbad88c3b71db44aad70",
+    discount: "0x5bb401114feb59200e4e3ceace6fc5a7dea998fa",
     hollar: "0x531a654d1696ED52e7275A8cede955E82620f99a",
-    vaults: {
-      eth: { address: "0x79b41c78a2b5ac1ddc3c80877449b1cc8f850c46", asset: 4200 },
-      btc: { address: "0x2c66100c46d15d6b826ba2a89f2d31e3ca47a153", asset: 1000765 },
-    },
+    vaults: { btc: { address: "0x79b41c78a2b5ac1ddc3c80877449b1cc8f850c46", asset: 1000765 } },
+    assets: { eth: 4200, btc: 1000765 },
   },
 ];
 
@@ -44,6 +44,8 @@ interface Call {
   to: Hex;
   sig: string;
   args?: unknown[];
+  /** undefined instead of an error: older contracts lack it, or the asset isn't listed */
+  optional?: boolean;
 }
 
 async function rpc(url: string, body: unknown): Promise<unknown> {
@@ -62,7 +64,10 @@ async function ethCalls(url: string, calls: Call[], block: string): Promise<unkn
   const byId = new Map(out.map((r) => [r.id, r]));
   return prepared.map((x, i) => {
     const r = byId.get(i);
-    if (!r?.result) throw new Error(`${calls[i].sig.split("(")[0].replace("function ", "")}: ${r?.error?.message ?? "no result"}`);
+    if (!r?.result || r.result === "0x") {
+      if (calls[i].optional) return undefined;
+      throw new Error(`${calls[i].sig.split("(")[0].replace("function ", "")}: ${r?.error?.message ?? "no result"}`);
+    }
     return decodeFunctionResult({ abi: x.abi, functionName: x.fn, data: r.result } as never);
   });
 }
@@ -97,36 +102,53 @@ export async function loadLive(dep: Deployment, url = dep.rpc, at?: number): Pro
   const timestamp = Number(head.result.timestamp);
   const keys: VaultKey[] = ["eth", "btc"];
   const S = dep.subLoop;
-  const calls: Call[] = [
-    { to: dep.oracle, sig: "function getAssetPrice(address) view returns (uint256)", args: [PRIME] },
-    { to: dep.aavePool, sig: "function getUserAccountData(address) view returns (uint256,uint256,uint256,uint256,uint256,uint256)", args: [S] },
-    { to: dep.aavePool, sig: "function getReserveData(address) view returns ((uint256),uint128,uint128,uint128,uint128,uint128,uint40,uint16,address,address,address,address,uint128,uint128,uint128)", args: [dep.hollar] },
-    { to: dep.aavePool, sig: "function getConfiguration(address) view returns (uint256)", args: [PRIME] },
-    { to: S, sig: "function targetHf() view returns (uint256)" },
-    { to: S, sig: "function deployTranche() view returns (uint256)" },
-    { to: S, sig: "function admissionMaxDeficitBps() view returns (uint16)" },
-    { to: S, sig: "function harvestThreshold() view returns (uint256)" },
-    { to: dep.discount, sig: "function discountBps() view returns (uint16)" },
-    { to: dep.hollar, sig: "function balanceOf(address) view returns (uint256)", args: [POOL143_EVM] },
+  const named: [string, Call][] = [
+    ["primePrice", { to: dep.oracle, sig: "function getAssetPrice(address) view returns (uint256)", args: [PRIME] }],
+    ["account", { to: dep.aavePool, sig: "function getUserAccountData(address) view returns (uint256,uint256,uint256,uint256,uint256,uint256)", args: [S] }],
+    ["hollarReserve", { to: dep.aavePool, sig: "function getReserveData(address) view returns ((uint256),uint128,uint128,uint128,uint128,uint128,uint40,uint16,address,address,address,address,uint128,uint128,uint128)", args: [dep.hollar] }],
+    ["primeConfig", { to: dep.aavePool, sig: "function getConfiguration(address) view returns (uint256)", args: [PRIME] }],
+    ["targetHf", { to: S, sig: "function targetHf() view returns (uint256)" }],
+    ["tranche", { to: S, sig: "function deployTranche() view returns (uint256)" }],
+    ["admission", { to: S, sig: "function admissionMaxDeficitBps() view returns (uint16)" }],
+    ["harvestThreshold", { to: S, sig: "function harvestThreshold() view returns (uint256)" }],
+    ["costReservePpm", { to: S, sig: "function dcaSlippagePpm() view returns (uint32)" }],
+    ["discount", { to: dep.discount, sig: "function discountBps() view returns (uint16)" }],
+    ["loopDiscount", { to: dep.discount, sig: "function loopDiscountBps() view returns (uint16)", optional: true }],
+    ["loopCap", { to: dep.discount, sig: "function loopCap() view returns (uint256)", optional: true }],
+    ["poolHollar", { to: dep.hollar, sig: "function balanceOf(address) view returns (uint256)", args: [POOL143_EVM] }],
   ];
   for (const k of keys) {
+    const asset = token(dep.assets[k]);
     const v = dep.vaults[k];
-    calls.push(
-      { to: dep.oracle, sig: "function getAssetPrice(address) view returns (uint256)", args: [token(v.asset)] },
-      { to: dep.aavePool, sig: "function getConfiguration(address) view returns (uint256)", args: [token(v.asset)] },
-      { to: v.address, sig: "function totalAssets() view returns (uint256)" },
-      { to: v.address, sig: "function tvlCap() view returns (uint256)" },
-      { to: v.address, sig: "function withdrawalDelay() view returns (uint32)" },
-      { to: v.address, sig: "function mainDebt() view returns (address)" },
-      { to: S, sig: "function principalOf(address) view returns (uint256)", args: [v.address] },
-      { to: S, sig: "function equityOf(address) view returns (uint256)", args: [v.address] },
-      { to: dep.feeController, sig: "function protocolFeeBps(address) view returns (uint16)", args: [v.address] },
+    named.push(
+      [`${k}.price`, { to: dep.oracle, sig: "function getAssetPrice(address) view returns (uint256)", args: [asset], optional: !v }],
+      [`${k}.config`, { to: dep.aavePool, sig: "function getConfiguration(address) view returns (uint256)", args: [asset], optional: !v }],
+    );
+    if (!v) continue;
+    named.push(
+      [`${k}.units`, { to: v.address, sig: "function totalAssets() view returns (uint256)" }],
+      [`${k}.tvlCap`, { to: v.address, sig: "function tvlCap() view returns (uint256)" }],
+      [`${k}.delay`, { to: v.address, sig: "function withdrawalDelay() view returns (uint32)" }],
+      [`${k}.ledger`, { to: v.address, sig: "function mainDebt() view returns (address)" }],
+      [`${k}.principal`, { to: S, sig: "function principalOf(address) view returns (uint256)", args: [v.address] }],
+      [`${k}.equity`, { to: S, sig: "function equityOf(address) view returns (uint256)", args: [v.address] }],
+      [`${k}.fee`, { to: dep.feeController, sig: "function protocolFeeBps(address) view returns (uint16)", args: [v.address] }],
+      [`${k}.band`, { to: S, sig: "function rebalanceBand(address) view returns (uint16,uint16,uint16)", args: [v.address], optional: true }],
+      [`${k}.headroom`, { to: S, sig: "function exitHeadroom(address) view returns (bool,uint16)", args: [v.address], optional: true }],
     );
   }
-  calls.push({ to: S, sig: "function dcaSlippagePpm() view returns (uint32)" });
-  const r = await ethCalls(url, calls, blockHex);
-  const ledgers = keys.map((_, i) => r[10 + i * 9 + 5] as Hex);
-  const positions = await ethCalls(url, ledgers.map((l) => ({ to: l, sig: "function activePosition() view returns (uint256,uint256,uint256)" })), blockHex);
+  const out = await ethCalls(url, named.map(([, c]) => c), blockHex);
+  const r = new Map(named.map(([name], i) => [name, out[i]]));
+  const deployed = keys.filter((k) => dep.vaults[k]);
+  const ledgers = deployed.map((k) => r.get(`${k}.ledger`) as Hex);
+  const ledgerOut = await ethCalls(url, ledgers.flatMap((l) => [
+    { to: l, sig: "function activePosition() view returns (uint256,uint256,uint256)" },
+    { to: l, sig: "function protocolReserve() view returns (uint256)", optional: true },
+  ]), blockHex);
+  deployed.forEach((k, i) => {
+    r.set(`${k}.position`, ledgerOut[2 * i]);
+    r.set(`${k}.reserve`, ledgerOut[2 * i + 1]);
+  });
   // pool storage at the same block as the eth_calls (frontier blocks map 1:1 to substrate blocks); a batch may answer in any order
   const hashRes = ((await rpc(url, { jsonrpc: "2.0", id: 1, method: "chain_getBlockHash", params: [block] }).catch(() => null)) as { result?: unknown } | null)?.result;
   const at_ = typeof hashRes === "string" ? [hashRes] : [];
@@ -138,67 +160,85 @@ export async function loadLive(dep: Deployment, url = dep.rpc, at?: number): Pro
   const primeRes = storage.get(2);
   const notes: string[] = [];
 
-  // PRIME's yield over the last week from its oracle drift
+  // PRIME's yield over the last week from its oracle drift, or as much of it as the chain has, from a day on
   let primeYield: number | null = null;
   try {
     const back = (await rpc(url, { jsonrpc: "2.0", id: 1, method: "eth_getBlockByNumber", params: [`0x${Math.max(1, block - 20_000).toString(16)}`, false] })) as { result: { number: Hex; timestamp: Hex } };
-    const secPerBlock = (timestamp - Number(back.result.timestamp)) / (block - Number(back.result.number));
+    const secPerBlock = (timestamp - Number(back.result.timestamp)) / Math.max(1, block - Number(back.result.number));
     const weekAgo = Math.max(1, Math.round(block - (7 * 86400) / Math.max(1, secPerBlock)));
-    const [past] = await ethCalls(url, [calls[0]], `0x${weekAgo.toString(16)}`);
+    const [past] = await ethCalls(url, [named[0][1]], `0x${weekAgo.toString(16)}`);
     const pastBlock = (await rpc(url, { jsonrpc: "2.0", id: 1, method: "eth_getBlockByNumber", params: [`0x${weekAgo.toString(16)}`, false] })) as { result: { timestamp: Hex } };
     const years = (timestamp - Number(pastBlock.result.timestamp)) / (365 * 86400);
-    const y = Math.log(n(r[0], 8) / n(past, 8)) / years;
+    const y = Math.log(n(r.get("primePrice"), 8) / n(past, 8)) / years;
     if (years > 1 / 365 && Number.isFinite(y) && y > -0.5 && y < 1) primeYield = y;
+    else if (years <= 1 / 365) notes.push("PRIME yield kept: the chain has less than a day of oracle history");
   } catch {
     notes.push("PRIME yield kept: the node didn't serve last week's oracle price");
   }
 
-  const acct = r[1] as bigint[];
-  const hollarRes = r[2] as bigint[];
+  const acct = r.get("account") as bigint[];
+  const hollarRes = r.get("hollarReserve") as bigint[];
   const cfg = (x: unknown) => ({ ltv: Number((x as bigint) & 0xffffn) / 1e4, lt: Number(((x as bigint) >> 16n) & 0xffffn) / 1e4 });
-  const primeCfg = cfg(r[3]);
+  const primeCfg = cfg(r.get("primeConfig"));
+  const loopDiscount = r.get("loopDiscount");
+  const loopCap = r.get("loopCap");
   const live = {
-    primePrice: n(r[0], 8),
+    primePrice: n(r.get("primePrice"), 8),
     collateralUsd: n(acct[0], 8),
     debtUsd: n(acct[1], 8),
     hf: n(acct[5], 18),
     hollarRate: n(hollarRes[4], 27),
     primeLt: primeCfg.lt,
-    targetHf: n(r[4], 18),
-    tranche: n(r[5], 18),
-    admission: Number(r[6]),
-    harvestThreshold: n(r[7], 18),
-    costReservePpm: Number(r[10 + keys.length * 9]),
-    discount: Number(r[8]) / 1e4,
-    poolHollar: n(r[9], 18),
+    targetHf: n(r.get("targetHf"), 18),
+    tranche: n(r.get("tranche"), 18),
+    admission: Number(r.get("admission")),
+    harvestThreshold: n(r.get("harvestThreshold"), 18),
+    costReservePpm: Number(r.get("costReservePpm")),
+    discount: Number(r.get("discount")) / 1e4,
+    loopDiscount: loopDiscount === undefined ? undefined : Number(loopDiscount) / 1e4,
+    loopCap: loopCap === undefined ? undefined : n(loopCap, 18),
+    poolHollar: n(r.get("poolHollar"), 18),
     poolPrime: primeRes?.result ? Number(u128le(primeRes.result, 0)) / 1e6 : NaN,
     amp: info?.result ? uLe(info.result, 1 + 8 + 2, 2) : NaN,
     feeBps: info?.result ? uLe(info.result, 1 + 8 + 2 + 2 + 4 + 4, 4) / 100 : NaN,
   };
-  const vaults = keys.map((k, i) => {
-    const b = 10 + i * 9;
-    const c = cfg(r[b + 1]);
+  const vaults = keys.map((k) => {
+    const price = r.get(`${k}.price`);
+    const c = r.get(`${k}.config`) === undefined ? undefined : cfg(r.get(`${k}.config`));
+    if (!dep.vaults[k]) return { k, deployed: false as const, price: price === undefined ? undefined : n(price, 8), config: c };
+    const band = r.get(`${k}.band`) as number[] | undefined;
+    const headroom = r.get(`${k}.headroom`) as [boolean, number] | undefined;
+    const reserve = r.get(`${k}.reserve`);
     return {
       k,
-      price: n(r[b], 8),
-      ltv: c.ltv,
-      lt: c.lt,
-      units: n(r[b + 2], 18),
-      tvlCap: n(r[b + 3], 18),
-      cooldown: Number(r[b + 4]) / 3600,
-      mainDebt: n((positions[i] as bigint[])[0], 18),
-      principal: n(r[b + 6], 18),
-      equity: n(r[b + 7], 8),
-      fee: Number(r[b + 8]),
+      deployed: true as const,
+      price: n(price, 8),
+      config: c!,
+      units: n(r.get(`${k}.units`), 18),
+      tvlCap: n(r.get(`${k}.tvlCap`), 18),
+      cooldown: Number(r.get(`${k}.delay`)) / 3600,
+      mainDebt: n((r.get(`${k}.position`) as bigint[])[0], 18),
+      principal: n(r.get(`${k}.principal`), 18),
+      equity: n(r.get(`${k}.equity`), 8),
+      fee: Number(r.get(`${k}.fee`)),
+      band: band && { gap: Number(band[0]) / 1e4, relever: Number(band[1]) / 1e4, delever: Number(band[2]) / 1e4 },
+      headroom: headroom && { on: headroom[0], gapBps: Number(headroom[1]) },
+      reserve: reserve === undefined ? undefined : n(reserve, 18),
     };
   });
   if (!Number.isFinite(live.poolPrime) || !Number.isFinite(live.amp)) notes.push("pool 143 storage unreadable; pool settings kept");
+  const first = vaults.find((v) => v.deployed);
+  if (!first) throw new Error(`${dep.label} has no vault`);
+  // mid-ramp, the live HF says nothing about the lag
+  const atTarget = live.hf >= live.targetHf && live.hf - live.targetHf <= 0.01;
+  if (!atTarget) notes.push(`loop still ramping (HF ${live.hf.toFixed(3)} vs target ${live.targetHf.toFixed(3)}): HF lag kept`);
+  for (const v of vaults) if (!v.deployed) notes.push(`no ${v.k === "eth" ? "jETH" : "jBTC"} vault on ${dep.label.split(" (")[0]}: its chain state is cleared and its toggle kept`);
 
   const changes: string[] = [];
   const apply = (input: Params): Params => {
     const p = structuredClone(input);
-    const set = <T>(label: string, cur: T, next: T, write: (v: T) => void) => {
-      if (typeof next === "number" && !Number.isFinite(next)) return;
+    const set = <T>(label: string, cur: T, next: T | undefined, write: (v: T) => void) => {
+      if (next === undefined || (typeof next === "number" && !Number.isFinite(next))) return;
       if (cur !== next) changes.push(label);
       write(next);
     };
@@ -207,7 +247,7 @@ export async function loadLive(dep: Deployment, url = dep.rpc, at?: number): Pro
     set("HOLLAR rate", p.market.hollarRate, live.hollarRate, (v) => { p.market.hollarRate = v; });
     if (primeYield != null) set("PRIME yield (7 d)", p.market.primeYield, primeYield, (v) => { p.market.primeYield = v; });
     set("target HF", p.loop.targetHf, live.targetHf, (v) => { p.loop.targetHf = v; });
-    set("HF lag", p.loop.hfLag, Math.max(0, Math.min(0.05, live.hf - live.targetHf)), (v) => { p.loop.hfLag = v; });
+    if (atTarget) set("HF lag", p.loop.hfLag, live.hf - live.targetHf, (v) => { p.loop.hfLag = v; });
     set("PRIME LT", p.loop.primeLt, live.primeLt, (v) => { p.loop.primeLt = v; });
     set("entry tranche", p.loop.tranche, live.tranche, (v) => { p.loop.tranche = v; });
     set("loop collateral", p.loop.collateralUsd, live.collateralUsd, (v) => { p.loop.collateralUsd = v; });
@@ -220,21 +260,38 @@ export async function loadLive(dep: Deployment, url = dep.rpc, at?: number): Pro
     set("harvest threshold", p.policy.harvestThresholdBps, live.harvestThreshold * 1e4, (v) => { p.policy.harvestThresholdBps = v; });
     set("execution-cost allowance", p.policy.costReserveBps, live.costReservePpm / 100, (v) => { p.policy.costReserveBps = v; });
     set("vault HOLLAR discount", p.fees.discountMain, live.discount, (v) => { p.fees.discountMain = v; });
-    set("protocol fee", p.fees.protocolFeeBps, vaults[0].fee, (v) => { p.fees.protocolFeeBps = v; });
-    set("withdrawal cooldown", p.policy.cooldownHours, vaults[0].cooldown, (v) => { p.policy.cooldownHours = v; });
+    set("loop HOLLAR discount", p.fees.discountLoop, live.loopDiscount, (v) => { p.fees.discountLoop = v; });
+    set("loop discount cap", p.fees.loopDiscountCapUsd, live.loopCap, (v) => { p.fees.loopDiscountCapUsd = v; });
+    set("protocol fee", p.fees.protocolFeeBps, first.fee, (v) => { p.fees.protocolFeeBps = v; });
+    set("withdrawal cooldown", p.policy.cooldownHours, first.cooldown, (v) => { p.policy.cooldownHours = v; });
+    set("headroom exits", p.policy.headroomOn, first.headroom?.on, (v) => { p.policy.headroomOn = v; });
+    set("headroom gap", p.policy.headroomGapBps, first.headroom?.gapBps, (v) => { p.policy.headroomGapBps = v; });
+    set("protocol reserve", p.policy.reserveUsd, first.reserve, (v) => { p.policy.reserveUsd = v; });
     for (const v of vaults) {
       const pv = p.vaults[v.k];
       const name = pv.name;
-      // bands follow max LTV when they still sit at the contract's fixed offsets
-      const atDefault = Math.abs(pv.bandTarget - pv.maxLtv) < 1e-9 && Math.abs(pv.bandLo - (pv.maxLtv - 0.05)) < 1e-9 && Math.abs(pv.bandHi - (pv.maxLtv + 0.03)) < 1e-9;
       set(`${name} collateral price`, pv.price, v.price, (x) => { pv.price = x; });
-      set(`${name} max LTV`, pv.maxLtv, v.ltv, (x) => { pv.maxLtv = x; });
-      if (atDefault) {
-        pv.bandTarget = v.ltv;
-        pv.bandLo = v.ltv - 0.05;
-        pv.bandHi = v.ltv + 0.03;
+      if (v.config) {
+        // without a band from the chain, the band keeps its gaps off max LTV
+        const shift = v.config.ltv - pv.maxLtv;
+        set(`${name} max LTV`, pv.maxLtv, v.config.ltv, (x) => { pv.maxLtv = x; });
+        set(`${name} LT`, pv.lt, v.config.lt, (x) => { pv.lt = x; });
+        const band = v.deployed && v.band ? v.band : null;
+        const target = band ? v.config.ltv - band.gap : pv.bandTarget + shift;
+        const lo = band ? target - band.relever : pv.bandLo + shift;
+        const hi = band ? target + band.delever : pv.bandHi + shift;
+        const bp = (x: number) => Math.round(x * 1e4) / 1e4;
+        set(`${name} band`, `${pv.bandLo}/${pv.bandTarget}/${pv.bandHi}`, `${bp(lo)}/${bp(target)}/${bp(hi)}`, () => {
+          pv.bandLo = bp(lo);
+          pv.bandTarget = bp(target);
+          pv.bandHi = bp(hi);
+        });
       }
-      set(`${name} LT`, pv.lt, v.lt, (x) => { pv.lt = x; });
+      if (!v.deployed) {
+        set(`${name} chain state`, pv.mainDebt + pv.loopPrincipal + pv.loopEquityUsd, 0, () => { pv.mainDebt = 0; pv.loopPrincipal = 0; pv.loopEquityUsd = 0; });
+        continue;
+      }
+      set(`${name} on`, pv.on, true, (x) => { pv.on = x; });
       set(`${name} deposits`, pv.units, v.units, (x) => { pv.units = x; });
       set(`${name} TVL cap`, pv.tvlCap, v.tvlCap, (x) => { pv.tvlCap = x; });
       set(`${name} Main debt`, pv.mainDebt, v.mainDebt, (x) => { pv.mainDebt = x; });

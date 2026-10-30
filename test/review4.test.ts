@@ -50,6 +50,7 @@ it('gross exit fees are zero when the loop has earned no yield', () => {
 
 it('loop-bound ETH deposit fees also benefit existing BTC loop shares', () => {
   const p = quiet();
+  p.vaults.eth.on = true;
   p.sim.initial = 'ramped';
   p.depositFee.on = true;
   p.depositFee.bps = 100;
@@ -59,7 +60,8 @@ it('loop-bound ETH deposit fees also benefit existing BTC loop shares', () => {
   const mc = runPath(p, 0).summary;
   expect(mc.primeYieldUsd).toBe(0);
   expect(mc.entryCost).toBeCloseTo(0, 8);
-  expect(mc.aprBtc).toBeGreaterThan(0.007);
+  expect(mc.aprBtc).toBeGreaterThan(0.003);
+  expect(Math.abs(mc.aprBtc - cf.vaults.btc.net)).toBeLessThan(0.001);
   expect(cf.vaults.eth.usd.depositFeeIn + cf.vaults.btc.usd.depositFeeIn).toBeCloseTo(1000, 6);
   expect(cf.vaults.btc.usd.depositFeeIn).toBeGreaterThan(0);
   expect(cf.vaults.btc.net).toBeGreaterThan(0);

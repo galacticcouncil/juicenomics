@@ -86,10 +86,10 @@ const range = (xs: number[], f: (v: number) => string) => {
   return { value: f(s.p50), sub: `p5 ${f(s.p5)} · p95 ${f(s.p95)}` };
 };
 
-function Cohorts({ summaries, days }: { summaries: PathSummary[]; days: number }) {
+function Cohorts({ summaries, days, vaults }: { summaries: PathSummary[]; days: number; vaults: ("eth" | "btc")[] }) {
   const rows = useMemo(() => {
     const out: { vault: string; bucket: string; n: number; usd: number; apr: number }[] = [];
-    for (const vault of ["eth", "btc"] as const) {
+    for (const vault of vaults) {
       const all = summaries.flatMap((s) => s.cohorts.filter((c) => c.vault === vault));
       const buckets = new Map<number, { aprs: number[]; usd: number }>();
       const size = Math.max(7, Math.round(days / 8));
@@ -105,7 +105,7 @@ function Cohorts({ summaries, days }: { summaries: PathSummary[]; days: number }
       }
     }
     return out;
-  }, [summaries, days]);
+  }, [summaries, days, vaults]);
   return (
     <table className="grid">
       <thead><tr><th>vault</th><th>joined</th><th className="num">deposited / path</th><th className="num">median APR to the end</th></tr></thead>
@@ -134,6 +134,10 @@ export function Simulation({ p, mc, onApply }: {
     onApply(q);
   };
   const v = p.vaults;
+  const keys = (["eth", "btc"] as const).filter((k) => v[k].on);
+  const pick = <T,>(eth: T, btc: T) => keys.map((k) => (k === "eth" ? eth : btc));
+  const band = v[keys[keys.length - 1] ?? "btc"];
+  const exitsUsd = stat(col((x) => x.exitsUsd)).mean;
   return (
     <>
       <div className="controls">
@@ -152,32 +156,34 @@ export function Simulation({ p, mc, onApply }: {
       {run && (
         <>
           <div className="tiles">
-            <Tile label="jETH APR (in GIGAETH)" {...range(col((x) => x.aprEth), (x) => fmtPct(x))} />
-            <Tile label="jBTC APR (in tBTC)" {...range(col((x) => x.aprBtc), (x) => fmtPct(x))} />
+            {v.eth.on && <Tile label="jETH APR (in GIGAETH)" {...range(col((x) => x.aprEth), (x) => fmtPct(x))} />}
+            {v.btc.on && <Tile label="jBTC APR (in tBTC)" {...range(col((x) => x.aprBtc), (x) => fmtPct(x))} />}
             <Tile label="Protocol revenue / yr" {...range(col((x) => x.protocol), (x) => fmtUsd(x))} />
             <Tile label="Worst loop deficit" {...range(col((x) => x.maxLoopDeficitBps), (x) => fmtBps(x, 0))} />
             <Tile label="Deposits stopped" {...range(col((x) => Math.max(x.stopHoursEth, x.stopHoursBtc)), (x) => `${fmtNum(x, 0)} h`)} />
             <Tile label="Entries stalled" {...range(col((x) => x.stallHours), (x) => `${fmtNum(x, 0)} h`)} />
             <Tile label="Arb out of PRIME" {...range(col((x) => x.arbDryHours), (x) => `${fmtNum(x, 0)} h`)} />
             <Tile label="Avg entry · unwind cost" value={`${stat(col((x) => x.entryAvgBps)).mean.toFixed(1)} · ${stat(col((x) => x.unwindAvgBps)).mean.toFixed(1)}`} sub="bps vs oracle, volume-weighted" />
+            {exitsUsd > 0 && <Tile label="Exits from headroom" value={fmtPct(stat(col((x) => x.headroomExitsUsd)).mean / exitsUsd, 0)} sub={`of ${fmtUsd(exitsUsd)} withdrawn / path · stayers kept ${fmtUsd(stat(col((x) => x.headroomKeptUsd)).mean)} of loop`} title="dollar share of withdrawals settled from LTV headroom, without selling the loop, pooled over paths" />}
+            {exitsUsd > 0 && <Tile label="Exit wait" {...range(col((x) => x.exitWaitHours), (x) => `${fmtNum(x, 2)} h`)} title="from an exit's start after its cooldown to its collateral's release, dollar-weighted; headroom exits count zero" />}
           </div>
           <div className="cards">
-            <Fan run={run} title="Value per vault share, in collateral (start = 1)" keys={["navEth", "navBtc"]} labels={["jETH", "jBTC"]} colors={["var(--series-1)", "var(--series-2)"]} fmt={(x) => x.toFixed(4)} />
-            <Fan run={run} title="Deficit vs principal" keys={["loopDeficit", "defBtc"]} labels={["loop", "jBTC vault"]} colors={["var(--series-3)", "var(--series-2)"]} fmt={(x) => `${x.toFixed(0)} bps`}
+            <Fan run={run} title="Value per vault share, in collateral (start = 1)" keys={pick("navEth", "navBtc")} labels={pick("jETH", "jBTC")} colors={pick("var(--series-1)", "var(--series-2)")} fmt={(x) => x.toFixed(4)} />
+            <Fan run={run} title="Deficit vs principal" keys={["loopDeficit", keys.includes("btc") ? "defBtc" : "defEth"]} labels={["loop", keys.includes("btc") ? "jBTC vault" : "jETH vault"]} colors={["var(--series-3)", "var(--series-2)"]} fmt={(x) => `${x.toFixed(0)} bps`}
               hLines={p.policy.stopBps === p.policy.admissionBps
                 ? [{ y: p.policy.stopBps, color: "var(--critical)", label: `keeper stop & admission cap ${p.policy.stopBps} bps` }]
                 : [{ y: p.policy.stopBps, color: "var(--critical)", label: `keeper stop ${p.policy.stopBps}` }, { y: p.policy.admissionBps, color: "var(--warning)", label: `admission ${p.policy.admissionBps}` }]} />
-            <Fan run={run} title="Vault LTV" keys={["ltvEth", "ltvBtc"]} labels={["jETH", "jBTC"]} colors={["var(--series-1)", "var(--series-2)"]} fmt={(x) => fmtPct(x, 1)}
-              hLines={[{ y: v.btc.bandLo, color: "var(--neutral)", label: "relever" }, { y: v.btc.bandTarget, color: "var(--text-muted)", label: "target" }, { y: v.btc.bandHi, color: "var(--neutral)", label: "delever" }]} />
-            <Fan run={run} title="Collateral price (start = 1)" keys={["priceEth", "priceBtc"]} labels={["GIGAETH", "tBTC"]} colors={["var(--series-1)", "var(--series-2)"]} fmt={(x) => x.toFixed(2)} />
+            <Fan run={run} title="Vault LTV" keys={pick("ltvEth", "ltvBtc")} labels={pick("jETH", "jBTC")} colors={pick("var(--series-1)", "var(--series-2)")} fmt={(x) => fmtPct(x, 1)}
+              hLines={[{ y: band.bandLo, color: "var(--neutral)", label: "relever" }, { y: band.bandTarget, color: "var(--text-muted)", label: "target" }, { y: band.bandHi, color: "var(--neutral)", label: "delever" }, ...(p.policy.headroomOn ? [{ y: band.maxLtv - p.policy.headroomGapBps / 1e4, color: "var(--warning)", label: "exit cap" }] : [])]} />
+            <Fan run={run} title="Collateral price (start = 1)" keys={pick("priceEth", "priceBtc")} labels={pick("GIGAETH", "tBTC")} colors={pick("var(--series-1)", "var(--series-2)")} fmt={(x) => x.toFixed(2)} />
             <Line run={run} title="Pool 143 premium for selling PRIME" keys={["premium"]} labels={["edge after fee"]} colors={["var(--series-7)"]} fmt={(x) => `${x.toFixed(1)} bps`} />
             <Line run={run} title="Outside arb's PRIME inventory" keys={["arbPrime"]} labels={["PRIME"]} colors={["var(--series-4)"]} fmt={(x) => fmtNum(x, 0)} />
             <Fan run={run} title="Cumulative protocol revenue" keys={["protocolCum"]} labels={["protocol"]} colors={["var(--series-3)"]} fmt={(x) => fmtUsd(x)} />
             <Fan run={run} title="Cumulative trading costs" keys={["costCum"]} labels={["entries + unwinds + harvest swaps"]} colors={["var(--series-8)"]} fmt={(x) => fmtUsd(x)} />
             <div className="card">
               <h2>APR distribution across paths</h2>
-              <Histogram values={col((x) => x.aprEth)} color="var(--series-1)" label="jETH" />
-              <Histogram values={col((x) => x.aprBtc)} color="var(--series-2)" label="jBTC" />
+              {v.eth.on && <Histogram values={col((x) => x.aprEth)} color="var(--series-1)" label="jETH" />}
+              {v.btc.on && <Histogram values={col((x) => x.aprBtc)} color="var(--series-2)" label="jBTC" />}
             </div>
             <div className="card">
               <h2>Money flows <span className="muted small">mean per year</span></h2>
@@ -190,6 +196,7 @@ export function Simulation({ p, mc, onApply }: {
                     ["deposit fees (protocol)", (x: PathSummary) => x.depositFees],
                     ["treasury desk P&L vs oracle", (x: PathSummary) => x.deskPnl],
                     ["PRIME incentives paid", (x: PathSummary) => -x.incentiveCost],
+                    ["protocol reserve drawn by exits", (x: PathSummary) => -x.reserveDrawnUsd],
                     ["depositors' harvested yield", (x: PathSummary) => x.userEarnedUsd],
                     ["entry costs", (x: PathSummary) => -x.entryCost],
                     ["unwind costs", (x: PathSummary) => -x.unwindCost],
@@ -202,8 +209,8 @@ export function Simulation({ p, mc, onApply }: {
                   ] as const).map(([label, f]) => (
                     <tr key={label}><td>{label}</td><td className="num">{fmtUsd(stat(col(f)).mean)}</td></tr>
                   ))}
-                  <tr><td>rebalances / yr, jETH (relever · delever)</td><td className="num">{stat(col((x) => x.releversEth)).mean.toFixed(0)} · {stat(col((x) => x.deleversEth)).mean.toFixed(0)}</td></tr>
-                  <tr><td>rebalances / yr, jBTC (relever · delever)</td><td className="num">{stat(col((x) => x.releversBtc)).mean.toFixed(0)} · {stat(col((x) => x.deleversBtc)).mean.toFixed(0)}</td></tr>
+                  {v.eth.on && <tr><td>rebalances / yr, jETH (relever · delever) · average LTV</td><td className="num">{stat(col((x) => x.releversEth)).mean.toFixed(0)} · {stat(col((x) => x.deleversEth)).mean.toFixed(0)} · {fmtPct(stat(col((x) => x.ltvAvgEth)).mean, 1)}</td></tr>}
+                  {v.btc.on && <tr><td>rebalances / yr, jBTC (relever · delever) · average LTV</td><td className="num">{stat(col((x) => x.releversBtc)).mean.toFixed(0)} · {stat(col((x) => x.deleversBtc)).mean.toFixed(0)} · {fmtPct(stat(col((x) => x.ltvAvgBtc)).mean, 1)}</td></tr>}
                   <tr><td>deposited · blocked · withdrawn</td><td className="num">{fmtUsd(stat(col((x) => x.depositedUsd)).mean)} · {fmtUsd(stat(col((x) => x.blockedUsd)).mean)} · {fmtUsd(stat(col((x) => x.withdrawnUsd)).mean)}</td></tr>
                   <tr><td>lowest loop HF</td><td className="num">{stat(col((x) => x.minHf)).p5.toFixed(3)} (p5)</td></tr>
                 </tbody>
@@ -212,7 +219,7 @@ export function Simulation({ p, mc, onApply }: {
             <div className="card" style={{ gridColumn: "1 / -1" }}>
               <h2>Who earned what, by when they joined</h2>
               <p className="small muted">Annualized return to the horizon end, in collateral, net of every cost each group bore. Under pooled costs, early holders pay for later entries; switch attribution to compare.</p>
-              <Cohorts summaries={s} days={run.days} />
+              <Cohorts summaries={s} days={run.days} vaults={keys} />
             </div>
           </div>
         </>

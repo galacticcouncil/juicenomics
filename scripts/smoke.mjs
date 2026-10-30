@@ -94,6 +94,8 @@ await live.page.click(".popover button.primary");
 const banner = await live.page.waitForSelector('.banner:has-text("live state from")', { timeout: 30000 }).catch(() => null);
 check(!!banner, `live state loads in the browser${banner ? `: ${(await banner.innerText()).slice(0, 120)}` : ""}`);
 check(/\(live\)/.test(await live.page.$eval("header", (e) => e.innerText)), "header shows the live block");
+// the url follows the state after a 300 ms debounce
+await live.page.waitForFunction(() => /#s=\d+[zj]/.test(location.href), null, { timeout: 5000 }).catch(() => {});
 check(/#s=\d+[zj]/.test(live.page.url()), "live state lands in the share link");
 await live.page.screenshot({ path: `${OUT}overview-live.png`, fullPage: true });
 const dark = await open(ORIGIN, "dark");

@@ -16,7 +16,7 @@ export function Tile({ label, value, sub, title }: { label: string; value: strin
 
 export function Flags({ r, issues }: { r: ClosedResult; issues: string[] }) {
   const flags: { level: "critical" | "warning" | "good"; text: string }[] = issues.map((t) => ({ level: "critical", text: t }));
-  for (const v of [r.vaults.eth, r.vaults.btc]) {
+  for (const v of r.active.map((k) => r.vaults[k])) {
     if (v.net < 0) flags.push({ level: "critical", text: `${v.name} depositors lose money (${fmtPct(v.net)} a year)` });
     else if (v.net < 0.03) flags.push({ level: "warning", text: `${v.name} nets only ${fmtPct(v.net)} a year` });
   }
@@ -36,7 +36,7 @@ export function Flags({ r, issues }: { r: ClosedResult; issues: string[] }) {
   );
 }
 
-function VaultCard({ v, color }: { v: VaultResult; color: string }) {
+function VaultCard({ v, color, headroom }: { v: VaultResult; color: string; headroom: boolean }) {
   return (
     <div className="card">
       <h2>{v.name} <span className="muted small">{fmtUsd(v.tvlUsd)} TVL · per $1 of deposit, per year</span></h2>
@@ -48,7 +48,8 @@ function VaultCard({ v, color }: { v: VaultResult; color: string }) {
           <tr><td>first year, paying your own entry + exit{v.depositFee ? " + deposit fee" : ""}</td><td className="num">{fmtPct(v.year1)}</td></tr>
           <tr><td>average LTV · rebalances / yr</td><td className="num">{fmtPct(v.avgLtv, 1)} · {v.bands.eventsPerYear.toFixed(0)}</td></tr>
           <tr><td>re-borrowed / repaid per yr (of TVL)</td><td className="num">{fmtPct(v.bands.releverPerYear, 0)} / {fmtPct(v.bands.deleverPerYear, 0)}</td></tr>
-          <tr><td>one-off entry · exit cost (of deposit)</td><td className="num">{fmtPct(v.entryOneOff)} · {fmtPct(v.exitOneOff)}</td></tr>
+          <tr><td>one-off entry · exit cost, your share (of deposit)</td><td className="num">{fmtPct(v.entryOneOff)} · {fmtPct(v.exitOneOff)}</td></tr>
+          <tr><td>exits settled from headroom</td><td className="num">{headroom ? fmtPct(v.headroom.share, 0) : "off"}</td></tr>
         </tbody>
       </table>
     </div>
@@ -69,13 +70,16 @@ export function Overview({ p, r, issues, onApply }: { p: Params; r: ClosedResult
   const grows = Math.abs(t.endTvlUsd - t.tvlUsd) > 0.01 * t.tvlUsd;
   // what the Monte Carlo's share APR measures: a day-0 holder over the horizon, a fresh start paying its ramp inside it
   const horizon = (v: VaultResult) => (p.sim.initial === "fresh" ? `${p.sim.horizonDays} d from a fresh start ${fmtPct(v.horizonApr)}` : `a new deposit's first year ${fmtPct(v.year1)}`);
-  const costs = r.vaults.eth.usd.churnCost + r.vaults.btc.usd.churnCost + r.vaults.eth.usd.flowCost + r.vaults.btc.usd.flowCost;
+  const active = r.active.map((k) => r.vaults[k]);
+  const costs = active.reduce((a, v) => a + v.usd.churnCost + v.usd.flowCost, 0);
+  const exiting = active.some((v) => p.vaults[v.key].outflowRate > 0);
+  const cap = (k: "eth" | "btc") => p.vaults[k].maxLtv - p.policy.headroomGapBps / 1e4;
   return (
     <>
       <Flags r={r} issues={issues} />
       <div className="tiles">
-        <Tile label="jETH net APR" value={fmtPct(r.vaults.eth.net)} sub={`APY ${fmtPct(r.vaults.eth.netApy)}${r.vaults.eth.inKind ? ` (${fmtPct(r.vaults.eth.netWithInKind)} with GIGAETH yield)` : ""} · ${horizon(r.vaults.eth)}`} title="steady-state APR in GIGAETH; the second figure is comparable with the Simulation tab" />
-        <Tile label="jBTC net APR" value={fmtPct(r.vaults.btc.net)} sub={`APY ${fmtPct(r.vaults.btc.netApy)} · ${horizon(r.vaults.btc)}`} title="steady-state APR in tBTC; the second figure is comparable with the Simulation tab" />
+        {p.vaults.eth.on && <Tile label="jETH net APR" value={fmtPct(r.vaults.eth.net)} sub={`APY ${fmtPct(r.vaults.eth.netApy)}${r.vaults.eth.inKind ? ` (${fmtPct(r.vaults.eth.netWithInKind)} with GIGAETH yield)` : ""} · ${horizon(r.vaults.eth)}`} title="steady-state APR in GIGAETH; the second figure is comparable with the Simulation tab" />}
+        {p.vaults.btc.on && <Tile label="jBTC net APR" value={fmtPct(r.vaults.btc.net)} sub={`APY ${fmtPct(r.vaults.btc.netApy)} · ${horizon(r.vaults.btc)}`} title="steady-state APR in tBTC; the second figure is comparable with the Simulation tab" />}
         <Tile label="Break-even" value={fmtDays(r.breakEven.entryDays)} sub={`entry · round trip ${fmtDays(r.breakEven.roundTripDays)} · deficit repaid in ${fmtDays(r.breakEven.holeDays)}`} title="days of a depositor's net carry (after fees and costs) to earn back its own entry (and exit), slower vault; the deficit repays sooner because nothing is harvested or fee'd until it's gone" />
         <Tile label="Leverage" value={fmtX(r.lev.L)} sub={`HF ${r.lev.hfEff.toFixed(3)} · liquidated by a ${fmtPct(r.lev.liqDrop, 1)} PRIME drop`} />
         <Tile label="Entry · unwind cost" value={`${r.costs.entryBps.toFixed(1)} · ${r.costs.unwindBps.toFixed(1)}`} sub={`bps vs oracle${r.costs.stall ? " · STALLS at the lane cap" : ""}${r.costs.deskCoverage ? ` · desk covers ${fmtPct(r.costs.deskCoverage, 0)}` : ""}`} />
@@ -83,12 +87,14 @@ export function Overview({ p, r, issues, onApply }: { p: Params; r: ClosedResult
         <Tile label="Protocol revenue / yr" value={fmtUsd(pr.total)} sub={`${fmtPct(t.avgTvlUsd ? pr.total / t.avgTvlUsd : 0, 1)} of ${grows ? "average " : ""}TVL · ${fmtPct(pr.inCollateralShare, 0)} in collateral`} />
         <Tile label="HOLLAR borrowed" value={fmtUsd(r.hollar.debtUsd)} sub={`${r.hollar.perDollar.toFixed(2)} per $1 deposited, all sold for PRIME · facilitator headroom ${fmtUsd(r.hollar.headroomUsd)}${r.hollar.overHeadroom ? " · EXCEEDED" : ` · fits up to ${fmtUsd(r.hollar.maxTvlUsd)} TVL`}`} title="HOLLAR Juicer's vaults and loop owe; minted by the money market's facilitator and sold through pool 143, so arbs (or the desk) end up holding it" />
         <Tile label="Depositors earn / yr" value={fmtUsd(t.userNet)} sub={`${fmtPct(t.userAprWeighted)} on ${fmtUsd(t.avgTvlUsd)} ${grows ? `average TVL (${fmtUsd(t.tvlUsd)} → ${fmtUsd(t.endTvlUsd)})` : "TVL"}`} />
+        <Tile label="Headroom exits" value={!p.policy.headroomOn ? "off" : fmtPct(exiting ? r.exits.headroomShare : active.reduce((a, v) => a + v.headroom.share, 0) / Math.max(1, active.length), 0)}
+          sub={!p.policy.headroomOn ? "every exit unwinds its loop slice" : `of ${exiting ? "withdrawn dollars settle" : "exit dollars would settle"} without selling, LTV after ≤ ${active.map((v) => fmtPct(cap(v.key), 0)).join(" / ")}${exiting ? ` · spares ${fmtUsd(r.exits.unwindAvoidedUsd)} of PRIME sales / yr` : ""}`}
+          title="an exit settles from the vault's LTV headroom when the LTV after it stays at or under max LTV less the gap: the holders who stay keep its loop slice and the Main debt it backs, so their LTV rises. later delevers pay back part of the spared sales" />
         <Tile label="Lark 4 hole now" value={fmtUsd(r.lark4Now.holeUsd)} sub={`${fmtBps(r.lark4Now.holeBps, 0)} at the oracle · ${fmtUsd(r.lark4Now.holeMarketUsd)} at HOLLAR's market price`} />
       </div>
 
       <div className="cards">
-        <VaultCard v={r.vaults.eth} color="var(--series-1)" />
-        <VaultCard v={r.vaults.btc} color="var(--series-2)" />
+        {active.map((v) => <VaultCard key={v.key} v={v} color={v.key === "eth" ? "var(--series-1)" : "var(--series-2)"} headroom={p.policy.headroomOn} />)}
         <div className="card">
           <h2>Protocol revenue <span className="muted small">{fmtUsd(pr.total)} / yr</span></h2>
           <StackBar fmt={(v) => fmtUsd(v)} segments={[
@@ -135,14 +141,13 @@ export function Overview({ p, r, issues, onApply }: { p: Params; r: ClosedResult
         <div className="card" style={{ gridColumn: "1 / -1" }}>
           <h2>Leverage table <span className="muted small">click a row to use it</span></h2>
           <table className="grid">
-            <thead><tr><th>leverage</th><th className="num">target HF</th><th className="num">jETH APR</th><th className="num">jBTC APR</th><th className="num">break-even</th><th className="num">deficit</th><th className="num">PRIME drop to liquidation</th><th className="num">protocol / yr</th></tr></thead>
+            <thead><tr><th>leverage</th><th className="num">target HF</th>{active.map((v) => <th key={v.key} className="num">{v.name} APR</th>)}<th className="num">break-even</th><th className="num">deficit</th><th className="num">PRIME drop to liquidation</th><th className="num">protocol / yr</th></tr></thead>
             <tbody>
               {levRows.map(({ L, q, r: x }) => (
                 <tr key={L} onClick={() => onApply(q)} style={{ cursor: "pointer" }} className={Math.abs(L - r.lev.L) < 0.25 ? "hi" : ""}>
                   <td>{fmtX(L, 1)}</td>
                   <td className="num">{x.lev.targetHf.toFixed(3)}</td>
-                  <td className="num">{fmtPct(x.vaults.eth.net)}</td>
-                  <td className="num">{fmtPct(x.vaults.btc.net)}</td>
+                  {active.map((v) => <td key={v.key} className="num">{fmtPct(x.vaults[v.key].net)}</td>)}
                   <td className="num">{fmtDays(x.breakEven.entryDays)}</td>
                   <td className="num">{fmtBps(x.deficit.structuralBps, 0)}</td>
                   <td className="num">{fmtPct(x.lev.liqDrop, 1)}</td>

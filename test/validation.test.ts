@@ -21,7 +21,12 @@ const variants: [string, (p: Params) => void][] = [
     p.depositFee.on = true; p.depositFee.dest = "protocol"; p.depositFee.bps = 20;
     p.vaults.btc.outflowRate = 1; p.vaults.btc.inflowUsd = 100_000; p.vaults.btc.capOn = false;
   }],
-  ["incentive, swing pricing", (p) => { p.improvements.incentiveBps = 100; p.improvements.attribution = "swing"; p.vaults.eth.inflowUsd = 50_000; p.vaults.eth.capOn = false; }],
+  ["incentive, swing pricing", (p) => { p.vaults.eth.on = true; p.improvements.incentiveBps = 100; p.improvements.attribution = "swing"; p.vaults.eth.inflowUsd = 50_000; p.vaults.eth.capOn = false; }],
+  ["headroom exits, reserve draws, both vaults", (p) => {
+    p.vaults.eth.on = true; p.sim.initial = "lark4"; p.flows.growth = "exp"; p.flows.growthFactor = 2;
+    for (const k of ["eth", "btc"] as const) { p.vaults[k].capOn = false; p.vaults[k].outflowRate = 1.5; }
+  }],
+  ["capped loop discount at 60× TVL", (p) => { p.sim.initial = "ramped"; p.vaults.btc.units *= 60; p.vaults.btc.capOn = false; p.vaults.btc.outflowRate = 0.5; }],
 ];
 
 describe("the books close", () => {
@@ -39,6 +44,7 @@ describe("the books close", () => {
 describe("steady state", () => {
   it("a ramped start at flat prices earns the closed form's net APR", () => {
     const p = clone(LARK4);
+    p.vaults.eth.on = true;
     p.sim.initial = "ramped";
     p.policy.costReserveBps = 0;
     for (const k of ["eth", "btc"] as const) p.vaults[k].vol = 0;

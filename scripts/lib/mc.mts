@@ -69,17 +69,18 @@ export interface Stat {
 export function stat(values: number[]): Stat {
   const s = values.filter(Number.isFinite).sort((a, b) => a - b);
   const q = (x: number) => (s.length ? s[Math.min(s.length - 1, Math.max(0, Math.round(x * (s.length - 1))))] : NaN);
-  const mean = s.reduce((a, b) => a + b, 0) / Math.max(1, s.length);
+  const mean = s.length ? s.reduce((a, b) => a + b, 0) / s.length : NaN;
   const sd = Math.sqrt(s.reduce((a, b) => a + (b - mean) ** 2, 0) / Math.max(1, s.length - 1));
   return { mean, se: sd / Math.sqrt(Math.max(1, s.length)), p5: q(0.05), p10: q(0.1), p25: q(0.25), p50: q(0.5), p75: q(0.75), p90: q(0.9), p95: q(0.95) };
 }
 
-/** every numeric summary field across paths, plus the worse vault's APR */
+/** every numeric summary field across paths, plus the worse vault's APR; a vault that's off reports no APR */
 export function summarize(summaries: PathSummary[], fields?: string[]): Record<string, Stat> {
-  const keys = fields ?? Object.keys(summaries[0] ?? {}).filter((k) => typeof (summaries[0] as unknown as Record<string, unknown>)[k] === "number");
+  const rows = summaries as unknown as Record<string, number>[];
+  const keys = fields ?? Object.keys(rows[0] ?? {}).filter((k) => typeof rows[0][k] === "number");
   const out: Record<string, Stat> = {};
-  for (const k of keys) out[k] = stat(summaries.map((s) => (s as unknown as Record<string, number>)[k]));
-  out.aprWorst = stat(summaries.map((s) => Math.min(s.aprEth, s.aprBtc)));
+  for (const k of keys) if (rows.some((s) => Number.isFinite(s[k]))) out[k] = stat(rows.map((s) => s[k]));
+  out.aprWorst = stat(summaries.map((s) => Math.min(...[s.aprEth, s.aprBtc].filter(Number.isFinite))));
   return out;
 }
 

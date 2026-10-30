@@ -38,8 +38,17 @@ const VISIBLE: Record<string, (p: Params) => boolean> = {
   "improvements.deskBid": (p) => p.improvements.desk,
   "improvements.incentiveScope": (p) => p.improvements.incentiveBps > 0,
   "flows.growthFactor": (p) => p.flows.growth !== "none",
-  "vaults.eth.tvlCap": (p) => p.vaults.eth.capOn,
-  "vaults.btc.tvlCap": (p) => p.vaults.btc.capOn,
+  "vaults.eth.tvlCap": (p) => p.vaults.eth.on && p.vaults.eth.capOn,
+  "vaults.btc.tvlCap": (p) => p.vaults.btc.on && p.vaults.btc.capOn,
+  "market.corr": (p) => p.vaults.eth.on && p.vaults.btc.on,
+  "policy.headroomGapBps": (p) => p.policy.headroomOn,
+};
+
+// a vault that's off shows only its switch
+const rowShown = (d: ParamDef, p: Params) => {
+  const vault = /^vaults\.(eth|btc)\.(\w+)$/.exec(d.path);
+  if (vault && vault[2] !== "on" && !p.vaults[vault[1] as "eth" | "btc"].on) return false;
+  return VISIBLE[d.path]?.(p) ?? true;
 };
 
 const LEVER: Record<string, { label: string; title: string }> = {
@@ -130,7 +139,7 @@ export function ParamPanel({ p, set }: { p: Params; set: (path: string, v: unkno
   const [open, setOpen] = useState<Record<string, boolean>>({ market: true, loop: true, improvements: true, fees: true });
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return PARAMS.filter((d) => (VISIBLE[d.path]?.(p) ?? true) && (!onlyChanged || changed(p, d)) && (!q || `${d.label} ${d.help} ${d.path}`.toLowerCase().includes(q)));
+    return PARAMS.filter((d) => rowShown(d, p) && (!onlyChanged || changed(p, d)) && (!q || `${d.label} ${d.help} ${d.path}`.toLowerCase().includes(q)));
   }, [p, query, onlyChanged]);
   const count = PARAMS.filter((d) => changed(p, d)).length;
   return (
