@@ -26,8 +26,8 @@ export const PRESETS: Preset[] = [
   { key: "own", label: "Own-cost attribution", note: "deposits pay their own entry, exits their own unwind (contract change)", apply: (p) => { p.improvements.attribution = "own"; } },
   { key: "entryFee", label: "Pooled + auto entry fee", note: "newcomers pay ~c·L·ℓ into the loop, compensating incumbents for their entry (no contract change to the loop)", apply: (p) => { p.depositFee.on = true; p.depositFee.auto = true; } },
   { key: "lev3", label: "3× leverage", note: "half the leverage", apply: (p) => { p.loop.mode = "lev"; p.loop.leverage = 3; } },
-  { key: "mainnet", label: "Mainnet launch", note: "jBTC first: 12 h cooldown, caps off, 10× TVL growth, 30%/yr withdrawals", apply: (p) => {
-    p.policy.cooldownHours = 12; p.flows.growth = "exp"; p.flows.growthFactor = 10;
+  { key: "mainnet", label: "Mainnet launch", note: "jBTC first: 7-day cooldown, caps off, 10× TVL growth, 30%/yr withdrawals", apply: (p) => {
+    p.policy.cooldownHours = 168; p.flows.growth = "exp"; p.flows.growthFactor = 10;
     for (const k of ["eth", "btc"] as const) { p.vaults[k].capOn = false; p.vaults[k].outflowRate = 0.3; }
   } },
   { key: "stress", label: "Stress: crash + negative carry", note: "−30% in 48 h and PRIME yield below the HOLLAR rate", apply: (p) => { p.market.stress = "crash30"; p.market.primeYield = 0.04; } },
