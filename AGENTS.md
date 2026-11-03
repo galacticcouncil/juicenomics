@@ -4,25 +4,32 @@ Run the simulator headlessly with `npm run sim -- <command>`. Every command prin
 
 ```sh
 npm ci
+npm run sim -- deployments                         # the chains a config can model: lark4 (default), lark0
 npm run sim -- params --search leverage            # discover settings: path, url code, unit, range, lever, default, help
 npm run sim -- cf --set loop.mode=lev --set loop.leverage=3
 npm run sim -- mc --tvl 1000000 --set sim.initial=ramped --paths 96 --fields aprEth,aprBtc,stallHours
 npm run sim -- search --tier today --tvl 500000 --set sim.initial=ramped --min-protocol 0.05 --min-liq 0.05 --no-stall --verify 32
 npm run sim -- live --block 40000                   # chain state as a config + share link
-npm run sim -- backtest                             # replay Lark 4 history against the simulator
+npm run sim -- live --deployment lark0              # Lark 0's chain state: jETH on GIGAETH
+npm run sim -- backtest [--deployment lark0]        # replay a deployment's history against the simulator
 npm run sim -- hollar                               # HOLLAR supply, facilitator buckets, HSM inventory (mainnet)
 npm run sim -- link 'https://juicenomics.lark.hydration.cloud/#s=2z…'   # decode a share link
 ```
 
 ## Building a config
 
-Options apply in this order, and all of them are optional: `--preset`, then `--link`, `--config file.json`, `--live [--block n]`, `--tvl usd` and `--set path=value` (repeatable). The defaults are Lark 4's settings: the 30 Oct refork runs jBTC alone (`vaults.eth.on=false`; `--preset jeth` adds jETH), with the 65/75/83 band, a 69% fee, 40% / 90% discounts and headroom exits.
+Options apply in this order, and all of them are optional: `--deployment`, then `--preset`, `--link`, `--config file.json`, `--live [--block n]`, `--tvl usd` and `--set path=value` (repeatable).
+
+- **Deployments:** `--deployment` picks whose settings and chain state a config starts from, and what `--live` and `backtest` read.
+  - `lark4` (default): the 30 Oct refork runs jBTC alone (`vaults.eth.on=false`; `--preset jeth` adds jETH), with the 65/75/83 band, a 69% fee, 40% / 90% discounts and headroom exits.
+  - `lark0`: the 2 Nov refork runs jETH alone on GIGAETH (`vaults.btc.on=false`; `--preset jbtc` adds jBTC). It has the same band, fee, discounts and headroom exits, a 100 GIGAETH cap and the Larks' 60 s withdrawal delay (mainnet: 7 days). Its entry lane caps at 35 bps and refills 10 HOLLAR / s, against Lark 4's 27 bps and 50 / s.
+  - A preset, link or config from another deployment is an error, not a silent mix.
 
 - **`--config` file:** either nested params, merged in, or a flat `{"path": value}` map.
 - **`--tvl`:** scales the vaults that are on to a total TVL at today's split. Their chain positions scale with them, and the testnet caps come off.
 - **Paths:** use the `path` field from `sim params`, e.g. `vaults.btc.bandLo`. Values are parsed against the parameter's kind.
 - **Validation:** the result is validated. Clamped values and cross-field issues come back in `notes`.
-- **Links:** every result includes `link`, which opens the same config in the web app for humans. Links are versioned: a v1 or v2 link (before the refork) opens with that era's settings, both vaults and no headroom exits.
+- **Links:** every result includes `link`, which opens the same config in the web app for humans. Links are versioned: a v1 or v2 link (before the refork) opens with that era's settings, both vaults and no headroom exits. A link off Lark 4 carries its deployment (`dp`) and stores what differs from that deployment; a link without one is Lark 4's, as every older link is.
 
 ## What the numbers mean
 
@@ -30,7 +37,7 @@ Options apply in this order, and all of them are optional: `--preset`, then `--l
 - **APR:** share value growth in the vault's collateral units (GIGAETH, tBTC), as a log return over the horizon. A share is worth what an exit would return, net of the fee on unharvested surplus. A vault that's off reports `NaN` (dropped from `mc`).
 - **Start (`sim.initial`):**
   - `fresh` (default): the whole TVL ramps at t = 0 and pays its entry, about c·L·ℓ ≈ 0.84% of TVL at the 1 bp pool fee, inside the horizon. It's repaid from carry before any fee, so depositors bear (1 − f) of it, ≈ 0.26%. At Lark 4's TVL the ramp needs ~590k PRIME, past the arb's 500k inventory: expect about a day of entry stalls.
-  - `lark4`: starts from the chain's positions; that ramp was already paid.
+  - `lark4`: starts from the chain's positions, on either deployment (the value kept its old name); that ramp was already paid.
   - `ramped`: steady state. Everything is at target, the hole is repaid. Compare long-run economics with this one.
 - **`cf`** is the closed form: instant and steady state. Compare `vaults.*.horizonApr` with Monte Carlo APRs. `net` is the long-run rate.
 - **`mc`** reports mean, standard error and p5…p95 for every numeric path field, plus `aprWorst`, the worse vault per path.
@@ -52,14 +59,17 @@ Options apply in this order, and all of them are optional: `--preset`, then `--l
   - both review regression sets;
   - share links and the CLI.
 - **`npx tsx scripts/fit-netting.mts`** refits the closed form's `NETTING` curve to the Monte Carlo (steady state at 1-50× TVL, the 65/75/83 band, a 2 bps pool fee). Rerun it after engine changes that touch trading costs, and keep the scale tests in `test/mc.test.ts` in step.
-- **`npm run sim -- backtest`** samples Lark 4's archive. It replays quiet stretches (hole closure, HF) and deposits (ramp cost) from the chain's own state.
+- **`npm run sim -- backtest`** samples a deployment's archive (Lark 4 unless `--deployment lark0`). It replays quiet stretches (hole closure, HF) and deposits (ramp cost) from the chain's own state.
   - On 21 Oct the hole closure matched to −2.2% and HF to 4 decimals.
   - Deposit ramps matched to 147.2–147.9 vs 147.8–147.9 bps of principal.
 - **Default quiet stretches:** before trusting a result, check that `stallHours`, `unwindStallHours` and `arbDryHours` are small, `stopHours*` = 0 and `minHf` > 1.02.
 
 ## Gotchas
 
-- **Allowance gap:** the closed form leaves out the execution-cost allowance, ≈ 27 bps of the gross PRIME (≈ 160 bps of principal) kept as surplus. The Monte Carlo includes it and runs about 0.2 pp higher at a flat median price, more on paths where collateral falls.
+- **Allowance gap:** the closed form leaves out the execution-cost allowance, the share of the gross PRIME kept as surplus: 27 bps on Lark 4 (≈ 160 bps of principal), 35 on Lark 0 (≈ 210). The Monte Carlo includes it and runs about 0.15 pp higher on Lark 4 and 0.3 on Lark 0 at a flat median price, more on paths where collateral falls.
+- **Small TVL:** below Lark 4's TVL the closed form runs another ~0.15 pp under the Monte Carlo, for either vault: the `NETTING` fit starts at 1×. Lark 0, mid-ramp, sits there.
+- **GIGAETH:** pool 4200's share (aETH and wstETH), priced as ETH/USD × the pool's share rate. It moves with ETH (57% vol) and gained 1.5% on ETH over the last year: `inKindYield`, shown beside the APR, which is in GIGAETH and leaves it out. Depositors buy it outside the vault (Lark 0's $100k depositor paid ~1.4 bps over the oracle with ETH); the sim doesn't charge for that, for either collateral.
+- **Lark 0's lane:** entries refill at 10 HOLLAR / s, so a deposit ramps in at most 36k of PRIME an hour, about 12 h for its $100k depositor. Lark 4's binding limit is the 2,500-a-minute pacing, 150k an hour.
 - **Headroom exits:** an exit settles without selling while the vault's LTV after it stays ≤ max LTV − gap; the stayers keep its debt, so their LTV rises and later delevers sell part of what was spared. Big exits on a small vault don't fit: at Lark 4's TVL a quarter of withdrawal dollars settle from headroom, at $2M about 80%. The closed form's share tracks the Monte Carlo's pooled share within ~0.05.
 - **Loop discount cap:** the 90% loop discount covers 5M HOLLAR of loop debt; past ~$1.5M TVL the rest pays the full rate.
 - **Scale:** pool 143 (~$1.07M) and the arb's 500k PRIME inventory don't grow with TVL. Past ~$1M TVL trading costs and stalls rise; use `pool.depth`, the desk, or lower leverage.
