@@ -1,20 +1,25 @@
 import { describe, expect, it } from "vitest";
-import { LARK4, clone } from "../src/engine/params/defaults";
-import { preset, PRESETS } from "../src/engine/params/presets";
+import { DEPLOYMENT_KEYS, LARK0, LARK4, clone } from "../src/engine/params/defaults";
+import { preset, presetsFor, PRESETS } from "../src/engine/params/presets";
+import { BY_CODE } from "../src/engine/params/schema";
 import { decode, diff, encode } from "../src/engine/share/codec";
 
 describe("share links", () => {
   it("defaults encode to nothing", async () => {
     expect(await encode(clone(LARK4))).toBe("");
   });
-  it("every preset round-trips", async () => {
-    for (const p of PRESETS) {
-      const params = preset(p.key);
-      const token = await encode(params);
-      const back = await decode(token);
-      expect(back.error, p.key).toBeUndefined();
-      expect(diff(back.params), p.key).toEqual(diff(params));
+  it("every preset round-trips on every deployment", async () => {
+    for (const dep of DEPLOYMENT_KEYS) {
+      for (const p of presetsFor(dep)) {
+        const params = preset(p.key, dep);
+        const token = await encode(params);
+        const back = await decode(token);
+        expect(back.error, `${dep} ${p.key}`).toBeUndefined();
+        expect(back.params.deployment, `${dep} ${p.key}`).toBe(params.deployment);
+        expect(diff(back.params), `${dep} ${p.key}`).toEqual(diff(params));
+      }
     }
+    expect(PRESETS.filter((p) => p.only).map((p) => p.key)).toEqual(["jeth", "jbtc"]);
   });
   it("garbage falls back to the defaults with an error", async () => {
     const r = await decode("1zgarbage!!");
@@ -27,6 +32,43 @@ describe("share links", () => {
     expect(r.ignored).toContain("zz");
     expect(r.params.pool.feeBps).toBe(30);
     expect(r.clamped.length).toBeGreaterThan(0);
+  });
+});
+
+describe("deployments", () => {
+  it("a Lark 0 scenario carries its deployment and only what differs from Lark 0", async () => {
+    expect(BY_CODE.has("dp")).toBe(false);
+    expect(diff(clone(LARK0))).toEqual({ dp: "lark0" });
+    const p = clone(LARK0);
+    p.pool.feeBps = 4;
+    expect(diff(p)).toEqual({ dp: "lark0", pf: 4 });
+    const back = await decode(await encode(p));
+    expect(back.error).toBeUndefined();
+    expect(back.params.deployment).toBe("lark0");
+    expect(back.params.vaults.eth.on && !back.params.vaults.btc.on).toBe(true);
+    expect(back.params.loop.laneCapBps).toBe(35);
+    expect(back.params.pool.feeBps).toBe(4);
+  });
+  it("links without a deployment stay Lark 4's", async () => {
+    const v3 = `3j${Buffer.from(JSON.stringify({ pf: 4 })).toString("base64url")}`;
+    const back = await decode(v3);
+    expect(back.params.deployment).toBe("lark4");
+    expect(diff(back.params)).toEqual({ pf: 4 });
+    expect(await encode(clone(LARK4))).toBe("");
+  });
+  it("an unknown deployment falls back to Lark 4 and says so", async () => {
+    const back = await decode(`3j${Buffer.from(JSON.stringify({ dp: "lark9", pf: 4 })).toString("base64url")}`);
+    expect(back.params.deployment).toBe("lark4");
+    expect(back.ignored).toEqual(["dp"]);
+    expect(back.params.pool.feeBps).toBe(4);
+  });
+  it("deployment presets switch the chain, the rest stay on it", () => {
+    expect(preset("lark0").deployment).toBe("lark0");
+    expect(preset("lark4", "lark0").deployment).toBe("lark4");
+    const q = preset("noHeadroom", "lark0");
+    expect(q.deployment).toBe("lark0");
+    expect(q.policy.headroomOn).toBe(false);
+    expect(preset("jbtc", "lark0").vaults.btc.on).toBe(true);
   });
 });
 

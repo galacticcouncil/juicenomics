@@ -1,6 +1,6 @@
-import { DEPLOYMENTS, loadLive } from "../../src/engine/live/live";
+import { loadLive, type Deployment } from "../../src/engine/live/live";
 import { leverage } from "../../src/engine/model/closedForm";
-import { LARK4, clone } from "../../src/engine/params/defaults";
+import { baseline, clone } from "../../src/engine/params/defaults";
 import type { Params } from "../../src/engine/params/types";
 import { runPath, SERIES, SERIES_INDEX } from "../../src/engine/sim/mc";
 
@@ -27,15 +27,14 @@ function replay(p: Params, primeYield: number): Params {
 }
 
 /** replay a testnet's history against the simulator: hole closure in quiet stretches, and each deposit's ramp cost */
-export async function backtest(rpc: string, samples = 40) {
-  const dep = DEPLOYMENTS[0];
+export async function backtest(dep: Deployment, rpc = dep.rpc, samples = 40) {
   const head = (await loadLive(dep, rpc)).block;
   const pts: Sample[] = [];
   for (let i = 1; i <= samples; i++) {
     const block = Math.max(1, Math.round((head * i) / samples));
     try {
       const s = await loadLive(dep, rpc, block);
-      const p = s.apply(clone(LARK4));
+      const p = s.apply(clone(baseline(dep.key)));
       pts.push({ block, t: s.timestamp, p, principal: p.vaults.eth.loopPrincipal + p.vaults.btc.loopPrincipal, hole: hole(p) });
     } catch {
       // before the contracts existed
@@ -105,5 +104,5 @@ export async function backtest(rpc: string, samples = 40) {
       });
     }
   }
-  return { rpc, head, samples: pts.length, seriesLength: SERIES.length, carry, deposits, skipped };
+  return { deployment: dep.key, rpc, head, samples: pts.length, seriesLength: SERIES.length, carry, deposits, skipped };
 }

@@ -1,13 +1,14 @@
 // headless juicenomics for scripts and agents: every command prints one JSON document on stdout
 import { evaluate, worst, type ClosedResult } from "../src/engine/model/closedForm";
 import { KNOBS, KNOB, METRIC, METRICS, pareto, search, type Constraints, type Knob } from "../src/engine/opt/explore";
-import { LARK4, SNAPSHOT } from "../src/engine/params/defaults";
+import { DEPLOYMENTS } from "../src/engine/live/live";
+import { DEPLOYMENT, DEPLOYMENT_KEYS, SNAPSHOTS, baseline } from "../src/engine/params/defaults";
 import { PRESETS } from "../src/engine/params/presets";
 import { GROUPS, PARAMS, getPath } from "../src/engine/params/schema";
 import type { Params } from "../src/engine/params/types";
 import { decode, diff, encode } from "../src/engine/share/codec";
 import { backtest } from "./lib/backtest.mts";
-import { buildParams, flag, num, parseArgs, str, type Args } from "./lib/config.mts";
+import { buildParams, deploymentOf, flag, num, parseArgs, str, type Args } from "./lib/config.mts";
 import { hollarState } from "./lib/hollar.mts";
 import { runMc, seriesBands, summarize } from "./lib/mc.mts";
 
@@ -16,6 +17,7 @@ const SITE = "https://juicenomics.lark.hydration.cloud/";
 const HELP = `juicenomics headless: npm run sim -- <command> [options]   (JSON on stdout, errors on stderr)
 
 commands
+  deployments                          the chains a scenario can model: Lark 4 (jBTC on tBTC), Lark 0 (jETH on GIGAETH)
   params [--group g] [--search text]   every setting: path, url code, unit, range, lever, default, help
   presets                              named scenarios
   cf                                   closed form for the config
@@ -28,10 +30,11 @@ commands
   knobs                                what search can move, with ranges and levers
   live [--block n] [--rpc url]         chain state as a config (diff + share link)
   link [token|url]                     decode a share link, or encode the config when none is given
-  backtest [--rpc url]                 replay Lark 4 history against the simulator (carry, deposit ramp)
+  backtest [--rpc url]                 replay the deployment's history against the simulator (carry, deposit ramp)
   hollar [--evm url] [--ws url]        HOLLAR supply, facilitator buckets and HSM inventory on mainnet
 
 config (applied in this order, all optional)
+  --deployment lark4|lark0   whose settings and chain state to start from, and what --live and backtest read (default lark4)
   --preset key | --link <share url or token> | --config file.json (nested params or {"path": value})
   --live [--block n]    start from the chain's state      --tvl usd   scale the vaults that are on to a total TVL
   --set path=value      any parameter, repeatable (see: params)
@@ -40,6 +43,7 @@ config (applied in this order, all optional)
 examples
   npm run sim -- cf --set loop.mode=lev --set loop.leverage=3
   npm run sim -- mc --tvl 1000000 --set sim.initial=ramped --paths 96
+  npm run sim -- live --deployment lark0
   npm run sim -- search --tier today --tvl 500000 --set sim.initial=ramped --min-protocol 0.05 --min-liq 0.05 --no-stall --verify 32
 `;
 
@@ -86,20 +90,30 @@ async function main() {
     process.stdout.write(HELP);
     return;
   }
+  if (cmd === "deployments") {
+    return out(a, DEPLOYMENT_KEYS.map((k) => ({
+      key: k, label: DEPLOYMENT[k].label, rpc: DEPLOYMENTS.find((d) => d.key === k)?.rpc, source: SNAPSHOTS[k].source, snapshotBlock: SNAPSHOTS[k].evmBlock,
+      snapshotTime: new Date(SNAPSHOTS[k].timestamp * 1000).toISOString(), default: k === "lark4",
+    })));
+  }
+  const base = baseline(deploymentOf(a));
   if (cmd === "params") {
     const g = str(a, "group", "");
     const q = str(a, "search", "").toLowerCase();
     out(a, PARAMS.filter((d) => (!g || d.group === g) && (!q || `${d.path} ${d.label} ${d.help}`.toLowerCase().includes(q))).map((d) => ({
       path: d.path, code: d.code, group: d.group, label: d.label, kind: d.kind, unit: d.unit, min: d.min, max: d.max, step: d.step,
-      options: d.options?.map((o) => o.value), lever: d.lever, scope: d.scope, default: getPath(LARK4, d.path), help: d.help, source: d.source,
+      options: d.options?.map((o) => o.value), lever: d.lever, scope: d.scope, default: getPath(base, d.path), help: d.help, source: d.source,
     })).concat([] as never[]));
     return;
   }
   if (cmd === "groups") return out(a, GROUPS);
-  if (cmd === "presets") return out(a, PRESETS.map((x) => ({ key: x.key, label: x.label, note: x.note })));
-  if (cmd === "knobs") return out(a, KNOBS.map((k) => ({ key: k.key, label: k.label, unit: k.unit, min: k.min, max: k.max, lever: k.lever, default: k.get(LARK4) })));
+  if (cmd === "presets") return out(a, PRESETS.map((x) => ({ key: x.key, label: x.label, note: x.note, deployment: x.deployment, only: x.only })));
+  if (cmd === "knobs") return out(a, KNOBS.map((k) => ({ key: k.key, label: k.label, unit: k.unit, min: k.min, max: k.max, lever: k.lever, default: k.get(base) })));
   if (cmd === "hollar") return out(a, await hollarState(str(a, "evm", "https://hdx.tarn.hydration.cloud"), str(a, "ws", "wss://hdx.tarn.hydration.cloud")));
-  if (cmd === "backtest") return out(a, await backtest(str(a, "rpc", "https://node4.lark.hydration.cloud")));
+  if (cmd === "backtest") {
+    const dep = DEPLOYMENTS.find((d) => d.key === base.deployment) ?? DEPLOYMENTS[0];
+    return out(a, await backtest(dep, str(a, "rpc", dep.rpc)));
+  }
   if (cmd === "link" && a._[1]) {
     const tokenArg = a._[1];
     const token = tokenArg.includes("#") ? (new URLSearchParams(tokenArg.slice(tokenArg.indexOf("#") + 1)).get("s") ?? "") : tokenArg;
@@ -111,7 +125,7 @@ async function main() {
   if (cmd === "live") a.flags.live = true;
   const { params, notes } = await buildParams(a);
   if (cmd === "link") return out(a, { link: await link(params), diff: diff(params), notes });
-  if (cmd === "live") return out(a, { link: await link(params), diff: diff(params), notes, snapshotBlock: SNAPSHOT.evmBlock });
+  if (cmd === "live") return out(a, { deployment: params.deployment, link: await link(params), diff: diff(params), notes, snapshotBlock: SNAPSHOTS[params.deployment].evmBlock });
   if (cmd === "cf") {
     const r = evaluate(params);
     return out(a, { notes, link: await link(params), ...(flag(a, "full") ? { result: r } : cfSummary(r)) });

@@ -4,15 +4,15 @@ import type { Params } from "../engine/params/types";
 
 export function LiveLoader({ p, onApply, onLoaded }: { p: Params; onApply: (p: Params) => void; onLoaded: (msg: string) => void }) {
   const [open, setOpen] = useState(false);
-  const [dep, setDep] = useState(DEPLOYMENTS[0].key);
-  const [url, setUrl] = useState(DEPLOYMENTS[0].rpc);
+  const d = DEPLOYMENTS.find((x) => x.key === p.deployment) ?? DEPLOYMENTS[0];
+  const [urls, setUrls] = useState<Record<string, string>>({});
+  const url = urls[d.key] ?? d.rpc;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const run = async () => {
     setBusy(true);
     setError(null);
     try {
-      const d = DEPLOYMENTS.find((x) => x.key === dep)!;
       const s = await loadLive(d, url);
       const next = s.apply(p);
       onApply(next);
@@ -30,12 +30,10 @@ export function LiveLoader({ p, onApply, onLoaded }: { p: Params; onApply: (p: P
       <button onClick={() => setOpen(!open)} title="read the running chain and project from its current state">load live state ▾</button>
       {open && (
         <div className="popover">
-          <label>deployment <select value={dep} onChange={(e) => { setDep(e.target.value); setUrl(DEPLOYMENTS.find((x) => x.key === e.target.value)!.rpc); }}>
-            {DEPLOYMENTS.map((d) => <option key={d.key} value={d.key}>{d.label}</option>)}
-          </select></label>
-          <label>rpc <input className="search" value={url} onChange={(e) => setUrl(e.target.value)} /></label>
+          <p className="small"><b>{d.label}</b>: the scenario's deployment (switch it in the header)</p>
+          <label>rpc <input className="search" value={url} onChange={(e) => setUrls({ ...urls, [d.key]: e.target.value })} /></label>
           <p className="small muted">
-            Reads the loop, the deployment's vaults, pool 143, prices, rates, contract settings (bands, headroom exits, fee, discounts, reserve) and PRIME's 7-day yield at the chain head, into the scenario you're editing. A vault the deployment doesn't run keeps its switch, with no chain state. Your other settings stay. The share link then carries this state.
+            Reads the loop, the deployment's vaults, pool 143, prices, rates, contract settings (bands, headroom exits, fee, discounts, reserve, the entry lane's cap, budget and pacing) and PRIME's 7-day yield at the chain head, into the scenario you're editing. A vault the deployment doesn't run keeps its switch, with no chain state. Your other settings stay. The share link then carries this state.
           </p>
           <button className="primary" disabled={busy} onClick={run}>{busy ? "reading…" : "load"}</button>
           {error && <p className="small" style={{ color: "var(--critical)" }}>{error}</p>}

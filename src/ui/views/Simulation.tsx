@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { DEPLOYMENT } from "../../engine/params/defaults";
 import type { Params } from "../../engine/params/types";
 import { stat, type McRun } from "../../engine/sim/aggregate";
 import type { PathSummary } from "../../engine/sim/mc";
@@ -86,7 +87,7 @@ const range = (xs: number[], f: (v: number) => string) => {
   return { value: f(s.p50), sub: `p5 ${f(s.p5)} · p95 ${f(s.p95)}` };
 };
 
-function Cohorts({ summaries, days, vaults }: { summaries: PathSummary[]; days: number; vaults: ("eth" | "btc")[] }) {
+function Cohorts({ summaries, days, vaults, chain }: { summaries: PathSummary[]; days: number; vaults: ("eth" | "btc")[]; chain: string }) {
   const rows = useMemo(() => {
     const out: { vault: string; bucket: string; n: number; usd: number; apr: number }[] = [];
     for (const vault of vaults) {
@@ -101,11 +102,11 @@ function Cohorts({ summaries, days, vaults }: { summaries: PathSummary[]; days: 
         buckets.set(b, x);
       }
       for (const [b, x] of [...buckets.entries()].sort((a, c) => a[0] - c[0])) {
-        out.push({ vault: vault === "eth" ? "jETH" : "jBTC", bucket: b < 0 ? "start (Lark 4 holders)" : `days ${b * size}–${(b + 1) * size}`, n: x.aprs.length, usd: x.usd, apr: stat(x.aprs).p50 });
+        out.push({ vault: vault === "eth" ? "jETH" : "jBTC", bucket: b < 0 ? `start (${chain} holders)` : `days ${b * size}–${(b + 1) * size}`, n: x.aprs.length, usd: x.usd, apr: stat(x.aprs).p50 });
       }
     }
     return out;
-  }, [summaries, days, vaults]);
+  }, [summaries, days, vaults, chain]);
   return (
     <table className="grid">
       <thead><tr><th>vault</th><th>joined</th><th className="num">deposited / path</th><th className="num">median APR to the end</th></tr></thead>
@@ -219,7 +220,7 @@ export function Simulation({ p, mc, onApply }: {
             <div className="card" style={{ gridColumn: "1 / -1" }}>
               <h2>Who earned what, by when they joined</h2>
               <p className="small muted">Annualized return to the horizon end, in collateral, net of every cost each group bore. Under pooled costs, early holders pay for later entries; switch attribution to compare.</p>
-              <Cohorts summaries={s} days={run.days} vaults={keys} />
+              <Cohorts summaries={s} days={run.days} vaults={keys} chain={DEPLOYMENT[p.deployment].name} />
             </div>
           </div>
         </>

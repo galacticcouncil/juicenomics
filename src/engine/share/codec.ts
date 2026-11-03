@@ -1,12 +1,14 @@
 import v2 from "../../data/defaults-v2.json";
-import { LARK4, clone } from "../params/defaults";
+import { BASELINES, LARK4, baseline, clone, isDeployment } from "../params/defaults";
 import { BY_CODE, PARAMS, getPath, setPath } from "../params/schema";
 import type { Params } from "../params/types";
 import { validate } from "../params/validate";
 
 // 2: a fresh start became the default (v1 links implied the current state)
 // 3: the 30 Oct refork (jBTC alone, headroom exits); older links spell out their era's defaults, both vaults and none of the later mechanics
+// a link off Lark 4 carries its deployment as "dp" and differs from that deployment's settings; a link without one is Lark 4's
 export const VERSION = 3;
+const DEPLOYMENT_CODE = "dp";
 const V2_ERA: Record<string, unknown> = { ...v2, eO: true, bO: true, xO: false, xG: 0, xR: 0, dC: 1e9, lP: 0 };
 const MIGRATE: Record<number, (codes: Record<string, unknown>) => Record<string, unknown>> = {
   1: (codes) => MIGRATE[2]({ si: "lark4", ...codes }),
@@ -23,12 +25,14 @@ function quantize(value: unknown, step?: number): unknown {
   return Number(value.toFixed(Math.min(12, decimals)));
 }
 
-/** params that differ from the Lark 4 defaults, keyed by url code */
+/** params that differ from their deployment's settings, keyed by url code */
 export function diff(p: Params): Record<string, unknown> {
   const out: Record<string, unknown> = {};
+  const base = baseline(p.deployment);
+  if (base !== LARK4) out[DEPLOYMENT_CODE] = base.deployment;
   for (const d of PARAMS) {
     const a = getPath(p, d.path);
-    const b = getPath(LARK4, d.path);
+    const b = getPath(base, d.path);
     if (typeof a === "number" && typeof b === "number" ? Math.abs(a - b) > 1e-12 * Math.max(1, Math.abs(b)) : a !== b) {
       out[d.code] = quantize(a, d.step);
     }
@@ -37,9 +41,11 @@ export function diff(p: Params): Record<string, unknown> {
 }
 
 export function apply(codes: Record<string, unknown>): { params: Params; ignored: string[] } {
-  let p = clone(LARK4);
-  const ignored: string[] = [];
+  const dep = codes[DEPLOYMENT_CODE];
+  let p = clone(isDeployment(dep) ? BASELINES[dep] : LARK4);
+  const ignored: string[] = dep === undefined || isDeployment(dep) ? [] : [DEPLOYMENT_CODE];
   for (const [code, value] of Object.entries(codes)) {
+    if (code === DEPLOYMENT_CODE) continue;
     const d = BY_CODE.get(code);
     if (!d) {
       ignored.push(code);

@@ -89,6 +89,8 @@ a { color: var(--series-1); }
 .brand { font-size: 15px; font-weight: 650; margin-right: 6px; }
 .brand small { font-weight: 400; color: var(--text-muted); margin-left: 6px; }
 .spacer { flex: 1; }
+.top .presets { width: 7.5em; }
+@media (max-width: 1400px) { .brand small { display: none; } }
 .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 5px; overflow: hidden; }
 .seg button { border: 0; border-radius: 0; }
 .seg button.on { background: var(--text-primary); color: var(--surface-1); }

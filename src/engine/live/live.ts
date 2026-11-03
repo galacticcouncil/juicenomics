@@ -1,8 +1,9 @@
-import { decodeFunctionResult, encodeFunctionData, parseAbi, type Abi, type Hex } from "viem";
-import type { Params, VaultKey } from "../params/types";
+import { decodeFunctionResult, encodeAbiParameters, encodeFunctionData, formatUnits, keccak256, parseAbi, type Abi, type Hex } from "viem";
+import { DEPLOYMENT, baseline } from "../params/defaults";
+import type { DeploymentKey, Params, VaultKey } from "../params/types";
 
 export interface Deployment {
-  key: string;
+  key: DeploymentKey;
   label: string;
   rpc: string;
   subLoop: Hex;
@@ -18,18 +19,34 @@ export interface Deployment {
 
 const token = (id: number) => `0x${(0x100000000n + BigInt(id)).toString(16).padStart(40, "0")}` as Hex;
 
+// mainnet's money market on every fork; Juicer's addresses are per deployment, and one address can be another contract on another Lark
+const MARKET = {
+  aavePool: "0x1b02E051683b5cfaC5929C25E84adb26ECf87B38",
+  oracle: "0xAD33C0F0C42C5A0EAA65b5895D2BdB20cb6E8760",
+  hollar: "0x531a654d1696ED52e7275A8cede955E82620f99a",
+} as const;
+
 export const DEPLOYMENTS: Deployment[] = [
   {
     key: "lark4",
-    label: "Lark 4 (testnet, jBTC only)",
+    label: DEPLOYMENT.lark4.label,
     rpc: "https://node4.lark.hydration.cloud",
     subLoop: "0xe0983cedd797b38090e6dcde54af88aa6eb22edc",
-    aavePool: "0x1b02E051683b5cfaC5929C25E84adb26ECf87B38",
-    oracle: "0xAD33C0F0C42C5A0EAA65b5895D2BdB20cb6E8760",
+    ...MARKET,
     feeController: "0xa64e418978482d5de91717cf6c77e1f40105f2ab",
     discount: "0x5bb401114feb59200e4e3ceace6fc5a7dea998fa",
-    hollar: "0x531a654d1696ED52e7275A8cede955E82620f99a",
     vaults: { btc: { address: "0x79b41c78a2b5ac1ddc3c80877449b1cc8f850c46", asset: 1000765 } },
+    assets: { eth: 4200, btc: 1000765 },
+  },
+  {
+    key: "lark0",
+    label: DEPLOYMENT.lark0.label,
+    rpc: "https://node0.lark.hydration.cloud",
+    subLoop: "0x40cca3da6cead6dada9e9ffc4c06e9039791876a",
+    ...MARKET,
+    feeController: "0x5b153c8e24ca62436ef836a1f179dd8ade2d5acd",
+    discount: "0x5f8d1d70c658fd0ffd79d3eaa692fc78306f39db",
+    vaults: { eth: { address: "0xa64e418978482d5de91717cf6c77e1f40105f2ab", asset: 4200 } },
     assets: { eth: 4200, btc: 1000765 },
   },
 ];
@@ -39,6 +56,7 @@ const POOL143_INFO_KEY = "0x58972220a05bbe4c157921de509b53164c72016d74b63ae83d79
 const POOL143_PRIME_KEY = "0x99971b5749ac43e0235e41b0d37869188ee7418a6531173d60d1f6a82d8f4d5193be8ab8631ecbabbcd6391dee547297cc45366cd42115dfe2609c3bd8a0e72016922af77a40038b6fc34ec112f6d4356bedfbd1761799352b000000";
 const POOL143_EVM = "0xcc45366cd42115dfe2609c3bd8a0e72016922af7";
 const PRIME = token(43);
+const APRIME = "0x4C892a298A9C6b4cEd988b3D6E9CF93333aADcF7";
 
 interface Call {
   to: Hex;
@@ -73,6 +91,7 @@ async function ethCalls(url: string, calls: Call[], block: string): Promise<unkn
 }
 
 const n = (x: unknown, dec: number) => Number(x as bigint) / 10 ** dec;
+const exact = (x: unknown, dec: number) => Number(formatUnits(x as bigint, dec));
 const u128le = (hex: string, offset: number) => {
   let v = 0n;
   for (let i = 15; i >= 0; i--) v = (v << 8n) + BigInt(parseInt(hex.slice(2 + (offset + i) * 2, 4 + (offset + i) * 2), 16));
@@ -137,18 +156,33 @@ export async function loadLive(dep: Deployment, url = dep.rpc, at?: number): Pro
       [`${k}.headroom`, { to: S, sig: "function exitHeadroom(address) view returns (bool,uint16)", args: [v.address], optional: true }],
     );
   }
+  named.push(["controller", { to: S, sig: "function executionController() view returns (address)", optional: true }]);
   const out = await ethCalls(url, named.map(([, c]) => c), blockHex);
   const r = new Map(named.map(([name], i) => [name, out[i]]));
   const deployed = keys.filter((k) => dep.vaults[k]);
   const ledgers = deployed.map((k) => r.get(`${k}.ledger`) as Hex);
-  const ledgerOut = await ethCalls(url, ledgers.flatMap((l) => [
+  // the entry lane (HOLLAR → aPRIME): price cap, then its budget and pacing
+  const controller = r.get("controller") as Hex | undefined;
+  const lane = keccak256(encodeAbiParameters([{ type: "address" }, { type: "address" }, { type: "address" }], [S, dep.hollar, APRIME]));
+  const laneCalls: Call[] = controller ? [
+    { to: controller, sig: "function limits(bytes32) view returns (bytes32,uint128,uint128)", args: [lane], optional: true },
+    { to: controller, sig: "function maxShortfallBps(bytes32) view returns (uint16)", args: [lane], optional: true },
+  ] : [];
+  const ledgerOut = await ethCalls(url, [...ledgers.flatMap((l) => [
     { to: l, sig: "function activePosition() view returns (uint256,uint256,uint256)" },
     { to: l, sig: "function protocolReserve() view returns (uint256)", optional: true },
-  ]), blockHex);
+  ]), ...laneCalls], blockHex);
   deployed.forEach((k, i) => {
     r.set(`${k}.position`, ledgerOut[2 * i]);
     r.set(`${k}.reserve`, ledgerOut[2 * i + 1]);
   });
+  const limit = ledgerOut[2 * deployed.length] as [Hex, bigint, bigint] | undefined;
+  const group = controller && limit && limit[2] > 0n ? limit[0] : undefined;
+  const laneCap = group ? ledgerOut[2 * deployed.length + 1] : undefined;
+  const [budget, pacing] = controller && group ? await ethCalls(url, [
+    { to: controller, sig: "function budgets(bytes32) view returns (address,uint128,uint128,uint128,uint64)", args: [group], optional: true },
+    { to: controller, sig: "function pacing(bytes32) view returns (uint64,uint64,uint256)", args: [group], optional: true },
+  ], blockHex) as [[Hex, bigint, bigint] | undefined, [bigint] | undefined] : [undefined, undefined];
   // pool storage at the same block as the eth_calls (frontier blocks map 1:1 to substrate blocks); a batch may answer in any order
   const hashRes = ((await rpc(url, { jsonrpc: "2.0", id: 1, method: "chain_getBlockHash", params: [block] }).catch(() => null)) as { result?: unknown } | null)?.result;
   const at_ = typeof hashRes === "string" ? [hashRes] : [];
@@ -201,6 +235,10 @@ export async function loadLive(dep: Deployment, url = dep.rpc, at?: number): Pro
     poolPrime: primeRes?.result ? Number(u128le(primeRes.result, 0)) / 1e6 : NaN,
     amp: info?.result ? uLe(info.result, 1 + 8 + 2, 2) : NaN,
     feeBps: info?.result ? uLe(info.result, 1 + 8 + 2 + 2 + 4 + 4, 4) / 100 : NaN,
+    laneCap: laneCap === undefined ? undefined : Number(laneCap),
+    budgetCap: budget && budget[1] > 0n ? exact(budget[1], 18) : undefined,
+    budgetRefill: budget ? exact(budget[2], 18) : undefined,
+    paceSec: pacing ? Number(pacing[0]) : undefined,
   };
   const vaults = keys.map((k) => {
     const price = r.get(`${k}.price`);
@@ -232,17 +270,20 @@ export async function loadLive(dep: Deployment, url = dep.rpc, at?: number): Pro
   // mid-ramp, the live HF says nothing about the lag
   const atTarget = live.hf >= live.targetHf && live.hf - live.targetHf <= 0.01;
   if (!atTarget) notes.push(`loop still ramping (HF ${live.hf.toFixed(3)} vs target ${live.targetHf.toFixed(3)}): HF lag kept`);
-  for (const v of vaults) if (!v.deployed) notes.push(`no ${v.k === "eth" ? "jETH" : "jBTC"} vault on ${dep.label.split(" (")[0]}: its chain state is cleared and its toggle kept`);
+  for (const v of vaults) if (!v.deployed) notes.push(`no ${v.k === "eth" ? "jETH" : "jBTC"} vault on ${DEPLOYMENT[dep.key].name}: its chain state is cleared and its toggle kept`);
 
   const changes: string[] = [];
   const apply = (input: Params): Params => {
-    const p = structuredClone(input);
+    changes.length = 0;
+    // a scenario on another deployment starts over from this one's settings
+    const same = input.deployment === dep.key;
+    if (!same) changes.push(`deployment (${DEPLOYMENT[dep.key].name}'s settings)`);
+    const p = structuredClone(same ? input : baseline(dep.key));
     const set = <T>(label: string, cur: T, next: T | undefined, write: (v: T) => void) => {
       if (next === undefined || (typeof next === "number" && !Number.isFinite(next))) return;
       if (cur !== next) changes.push(label);
       write(next);
     };
-    changes.length = 0;
     set("PRIME price", p.market.primePrice, live.primePrice, (v) => { p.market.primePrice = v; });
     set("HOLLAR rate", p.market.hollarRate, live.hollarRate, (v) => { p.market.hollarRate = v; });
     if (primeYield != null) set("PRIME yield (7 d)", p.market.primeYield, primeYield, (v) => { p.market.primeYield = v; });
@@ -250,6 +291,10 @@ export async function loadLive(dep: Deployment, url = dep.rpc, at?: number): Pro
     if (atTarget) set("HF lag", p.loop.hfLag, live.hf - live.targetHf, (v) => { p.loop.hfLag = v; });
     set("PRIME LT", p.loop.primeLt, live.primeLt, (v) => { p.loop.primeLt = v; });
     set("entry tranche", p.loop.tranche, live.tranche, (v) => { p.loop.tranche = v; });
+    set("entry lane cap", p.loop.laneCapBps, live.laneCap, (v) => { p.loop.laneCapBps = v; });
+    set("entry budget", p.loop.budgetCap, live.budgetCap, (v) => { p.loop.budgetCap = v; });
+    set("budget refill", p.loop.budgetRefillPerSec, live.budgetRefill, (v) => { p.loop.budgetRefillPerSec = v; });
+    set("lane pacing", p.loop.paceSec, live.paceSec, (v) => { p.loop.paceSec = v; });
     set("loop collateral", p.loop.collateralUsd, live.collateralUsd, (v) => { p.loop.collateralUsd = v; });
     set("loop debt", p.loop.debtUsd, live.debtUsd, (v) => { p.loop.debtUsd = v; });
     set("pool PRIME", p.pool.prime, live.poolPrime, (v) => { p.pool.prime = v; });

@@ -1,3 +1,4 @@
+import { isDeployment } from "./defaults";
 import { PARAMS, getPath, setPath } from "./schema";
 import type { Params, VaultKey } from "./types";
 
@@ -20,6 +21,10 @@ export function validate(input: Params): Validated {
       p = setPath(p, d.path, c);
       clamped.push(d.label);
     }
+  }
+  if (!isDeployment(p.deployment)) {
+    p = setPath(p, "deployment", "lark4");
+    clamped.push("Deployment (to Lark 4)");
   }
   // a day has to hold a whole number of steps, or elapsed time drifts from the horizon
   const perDay = Math.max(1, Math.round(24 / p.sim.stepHours));

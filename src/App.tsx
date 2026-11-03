@@ -1,7 +1,7 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { evaluate } from "./engine/model/closedForm";
-import { LARK4, SNAPSHOT, clone } from "./engine/params/defaults";
-import { PRESETS, preset } from "./engine/params/presets";
+import { DEPLOYMENT, DEPLOYMENT_KEYS, LARK4, SNAPSHOTS, baseline, clone } from "./engine/params/defaults";
+import { preset, presetsFor } from "./engine/params/presets";
 import { setPath } from "./engine/params/schema";
 import type { Params } from "./engine/params/types";
 import { validate } from "./engine/params/validate";
@@ -100,6 +100,8 @@ export default function App() {
   const resA = useMemo(() => evaluate(deferredA), [deferredA]);
   const resB = useMemo(() => (deferredB ? evaluate(deferredB) : null), [deferredB]);
   const issues = validate(cur).issues.concat(result.issues);
+  const chain = DEPLOYMENT[cur.deployment].name;
+  const snapshot = SNAPSHOTS[cur.deployment];
 
   const share = async () => {
     await new Promise((r) => setTimeout(r, 350));
@@ -116,18 +118,21 @@ export default function App() {
     <div className="app">
       <header className="top">
         <span className="brand">Juicenomics<small>Juicer economics · model estimates, not a promise</small></span>
-        <select value="" onChange={(e) => { if (e.target.value) setCur(preset(e.target.value)); }} title="load a preset into the scenario being edited">
+        <select aria-label="deployment" value={cur.deployment} onChange={(e) => setCur(clone(baseline(e.target.value)))} title="the chain the scenario models, and the vault it runs; switching loads that chain's settings and state">
+          {DEPLOYMENT_KEYS.map((k) => <option key={k} value={k}>{DEPLOYMENT[k].label}</option>)}
+        </select>
+        <select aria-label="presets" className="presets" value="" onChange={(e) => { if (e.target.value) setCur(preset(e.target.value, cur.deployment)); }} title="load a preset into the scenario being edited">
           <option value="">presets…</option>
-          {PRESETS.map((p) => <option key={p.key} value={p.key} title={p.note}>{p.label}</option>)}
+          {presetsFor(cur.deployment).map((p) => <option key={p.key} value={p.key} title={p.note}>{p.label}</option>)}
         </select>
         <span className="seg" title="edit scenario A or B; Compare shows both">
           <button className={side === "A" ? "on" : ""} onClick={() => setSide("A")}>A</button>
           <button className={side === "B" ? "on" : ""} onClick={() => { if (!B) setB(clone(A)); setSide("B"); }}>B</button>
         </span>
         {B && <button onClick={() => { setB(null); setSide("A"); }} title="drop scenario B">✕ B</button>}
-        <button onClick={() => setCur(clone(LARK4))} title={`Lark 4's settings at block ${SNAPSHOT.evmBlock}, fresh start`}>reset to Lark 4</button>
+        <button onClick={() => setCur(clone(baseline(cur.deployment)))} title={`${chain}'s settings at block ${snapshot.evmBlock}, fresh start`}>reset to {chain}</button>
         <LiveLoader p={cur} onApply={setCur} onLoaded={setBanner} />
-        <span className="muted small" title="where the simulation starts: a fresh ramp, or the chain's loop and vault positions at a block">{cur.sim.initial === "fresh" ? "fresh start" : `state @ ${cur.sim.stateBlock.toLocaleString("en-US")} ${cur.sim.stateBlock === SNAPSHOT.evmBlock ? "(snapshot)" : "(live)"}`}</span>
+        <span className="muted small" title="where the simulation starts: a fresh ramp, or the chain's loop and vault positions at a block">{cur.sim.initial === "fresh" ? "fresh start" : `state @ ${cur.sim.stateBlock.toLocaleString("en-US")} ${cur.sim.stateBlock === snapshot.evmBlock ? "(snapshot)" : "(live)"}`}</span>
         <span className="spacer" />
         <select value={theme} onChange={(e) => setTheme(e.target.value as "auto" | "light" | "dark")} title="theme">
           <option value="auto">system theme</option>

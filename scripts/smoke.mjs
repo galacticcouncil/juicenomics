@@ -25,7 +25,7 @@ check(tiles.length >= 8 && tiles.some((t) => /jBTC net APR −?\d/i.test(t)), `o
 await page.screenshot({ path: `${OUT}overview-light.png`, fullPage: true });
 
 // load a preset, let the url settle, reopen the link in a fresh page
-await page.selectOption("header select", "disc100");
+await page.selectOption("header select[aria-label=presets]", "disc100");
 await page.waitForTimeout(800);
 const url = page.url();
 check(/#s=\d+[zj]/.test(url), `config lands in the url (${url.length} chars)`);
@@ -98,6 +98,24 @@ check(/\(live\)/.test(await live.page.$eval("header", (e) => e.innerText)), "hea
 await live.page.waitForFunction(() => /#s=\d+[zj]/.test(location.href), null, { timeout: 5000 }).catch(() => {});
 check(/#s=\d+[zj]/.test(live.page.url()), "live state lands in the share link");
 await live.page.screenshot({ path: `${OUT}overview-live.png`, fullPage: true });
+// lark 0: the deployment switch shows jETH alone, its link reopens there, and its live state loads
+const l0 = await open(ORIGIN);
+await l0.page.selectOption("header select[aria-label=deployment]", "lark0");
+await l0.page.waitForTimeout(800);
+const l0Tiles = await l0.page.$$eval(".tile", (els) => els.map((e) => e.innerText.replace(/\s+/g, " ")));
+check(l0Tiles.some((t) => /jETH net APR −?\d/i.test(t)) && !l0Tiles.some((t) => /jBTC net APR/i.test(t)) && l0Tiles.some((t) => /Lark 0 hole now/i.test(t)), `lark 0 shows jETH alone (${l0Tiles.length} tiles)`);
+const l0Url = l0.page.url();
+check(/#s=\d+[zj]/.test(l0Url), "lark 0 lands in the url");
+const l0Again = await open(l0Url);
+const l0Same = (await l0Again.page.$eval("header select[aria-label=deployment]", (e) => e.value)) === "lark0" &&
+  (await l0Again.page.$eval(".tiles", (e) => e.innerText)) === (await l0.page.$eval(".tiles", (e) => e.innerText));
+check(l0Same, "a lark 0 link reopens on lark 0 with the same results");
+await l0.page.click('button:has-text("load live state")');
+await l0.page.click(".popover button.primary");
+const l0Banner = await l0.page.waitForSelector('.banner:has-text("live state from Lark 0")', { timeout: 30000 }).catch(() => null);
+check(!!l0Banner, `lark 0 live state loads in the browser${l0Banner ? `: ${(await l0Banner.innerText()).slice(0, 120)}` : ""}`);
+check((await l0.page.$eval("header select[aria-label=deployment]", (e) => e.value)) === "lark0" && /state @ [\d,]+ \(live\)/.test(await l0.page.$eval("header", (e) => e.innerText)), "header shows lark 0's live block");
+await l0.page.screenshot({ path: `${OUT}overview-lark0.png`, fullPage: true });
 const dark = await open(ORIGIN, "dark");
 await dark.page.screenshot({ path: `${OUT}overview-dark.png`, fullPage: true });
 const wasm = await page.evaluate(async () => {
@@ -105,7 +123,7 @@ const wasm = await page.evaluate(async () => {
   return r.ok;
 });
 check(wasm, "index served");
-const allErrors = [...errors, ...again.errors, ...dark.errors, ...sim.errors, ...live.errors, ...opt.errors];
+const allErrors = [...errors, ...again.errors, ...dark.errors, ...sim.errors, ...live.errors, ...opt.errors, ...l0.errors, ...l0Again.errors];
 check(allErrors.length === 0, `no console errors${allErrors.length ? `: ${allErrors.slice(0, 3).join(" | ")}` : ""}`);
 await browser.close();
 process.exit(results.some((r) => r.startsWith("FAIL")) ? 1 : 0);

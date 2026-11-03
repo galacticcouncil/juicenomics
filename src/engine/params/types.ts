@@ -1,4 +1,5 @@
 export type VaultKey = "eth" | "btc";
+export type DeploymentKey = "lark4" | "lark0";
 
 export interface VaultParams {
   on: boolean;
@@ -28,6 +29,7 @@ export type Stress = "none" | "v20" | "crash30" | "bleed" | "oracleStep" | "negC
 
 export interface Params {
   v: 1;
+  deployment: DeploymentKey;
   market: {
     primeYield: number;
     primePrice: number;

@@ -1,10 +1,14 @@
-import { LARK4, clone } from "./defaults";
-import type { Params } from "./types";
+import { baseline, clone } from "./defaults";
+import type { DeploymentKey, Params } from "./types";
 
 export interface Preset {
   key: string;
   label: string;
   note: string;
+  /** starts from this deployment instead of the scenario's */
+  deployment?: DeploymentKey;
+  /** only meaningful on this deployment */
+  only?: DeploymentKey;
   apply: (p: Params) => void;
 }
 
@@ -13,8 +17,10 @@ const bands = (p: Params, lo: number, t: number, hi: number) => {
 };
 
 export const PRESETS: Preset[] = [
-  { key: "lark4", label: "Lark 4 today", note: "jBTC alone, 65/75/83 band, 69% fee, 40% / 90% discounts, headroom exits, arb at mainnet's 15 / 4 bps", apply: () => {} },
-  { key: "jeth", label: "jETH on too", note: "a jETH vault on GIGAETH beside jBTC, with the same band and fees", apply: (p) => { p.vaults.eth.on = true; } },
+  { key: "lark4", label: "Lark 4 today", note: "jBTC alone, 65/75/83 band, 69% fee, 40% / 90% discounts, headroom exits, arb at mainnet's 15 / 4 bps", deployment: "lark4", apply: () => {} },
+  { key: "lark0", label: "Lark 0 today", note: "jETH alone on GIGAETH, the same band, fee, discounts and headroom exits; entries capped at 35 bps and refilled at 10 HOLLAR / s", deployment: "lark0", apply: () => {} },
+  { key: "jeth", label: "jETH on too", note: "a jETH vault on GIGAETH beside jBTC, with the same band and fees", only: "lark4", apply: (p) => { p.vaults.eth.on = true; } },
+  { key: "jbtc", label: "jBTC on too", note: "a jBTC vault on tBTC beside jETH, sized like Lark 4's, with the same band and fees", only: "lark0", apply: (p) => { p.vaults.btc.on = true; } },
   { key: "noHeadroom", label: "No headroom exits", note: "every exit unwinds its loop slice, as before the release", apply: (p) => { p.policy.headroomOn = false; } },
   { key: "realistic", label: "Realistic arb", note: "arbs price in their HOLLAR exit + bridging (~19 bps)", apply: (p) => { p.arb.mode = "realistic"; } },
   { key: "fee4", label: "Pool fee 4 bps", note: "mainnet's pool 143 fee instead of the 1 bp launch fee", apply: (p) => { p.pool.feeBps = 4; } },
@@ -26,7 +32,7 @@ export const PRESETS: Preset[] = [
   { key: "own", label: "Own-cost attribution", note: "deposits pay their own entry, exits their own unwind (contract change)", apply: (p) => { p.improvements.attribution = "own"; } },
   { key: "entryFee", label: "Pooled + auto entry fee", note: "newcomers pay ~c·L·ℓ into the loop, compensating incumbents for their entry (no contract change to the loop)", apply: (p) => { p.depositFee.on = true; p.depositFee.auto = true; } },
   { key: "lev3", label: "3× leverage", note: "half the leverage", apply: (p) => { p.loop.mode = "lev"; p.loop.leverage = 3; } },
-  { key: "mainnet", label: "Mainnet launch", note: "jBTC first: 7-day cooldown, caps off, 10× TVL growth, 30%/yr withdrawals", apply: (p) => {
+  { key: "mainnet", label: "Mainnet launch", note: "the deployment's vault with a 7-day cooldown, caps off, 10× TVL growth, 30%/yr withdrawals", apply: (p) => {
     p.policy.cooldownHours = 168; p.flows.growth = "exp"; p.flows.growthFactor = 10;
     for (const k of ["eth", "btc"] as const) { p.vaults[k].capOn = false; p.vaults[k].outflowRate = 0.3; }
   } },
@@ -38,8 +44,12 @@ export const PRESETS: Preset[] = [
   } },
 ];
 
-export function preset(key: string): Params {
-  const p = clone(LARK4);
-  PRESETS.find((x) => x.key === key)?.apply(p);
+export const presetsFor = (deployment: DeploymentKey) => PRESETS.filter((x) => !x.only || x.only === deployment);
+
+/** a preset on a deployment's settings (Lark 4's by default); deployment presets bring their own */
+export function preset(key: string, deployment: DeploymentKey = "lark4"): Params {
+  const x = PRESETS.find((y) => y.key === key);
+  const p = clone(baseline(x?.deployment ?? deployment));
+  x?.apply(p);
   return p;
 }

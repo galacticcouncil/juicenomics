@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { evaluate, type ClosedResult, type VaultResult } from "../../engine/model/closedForm";
+import { DEPLOYMENT } from "../../engine/params/defaults";
 import type { Params } from "../../engine/params/types";
 import { StackBar, Waterfall } from "../charts/Svg";
 import { fmtBps, fmtDays, fmtPct, fmtUsd, fmtX } from "../fmt";
@@ -90,7 +91,7 @@ export function Overview({ p, r, issues, onApply }: { p: Params; r: ClosedResult
         <Tile label="Headroom exits" value={!p.policy.headroomOn ? "off" : fmtPct(exiting ? r.exits.headroomShare : active.reduce((a, v) => a + v.headroom.share, 0) / Math.max(1, active.length), 0)}
           sub={!p.policy.headroomOn ? "every exit unwinds its loop slice" : `of ${exiting ? "withdrawn dollars settle" : "exit dollars would settle"} without selling, LTV after ≤ ${active.map((v) => fmtPct(cap(v.key), 0)).join(" / ")}${exiting ? ` · spares ${fmtUsd(r.exits.unwindAvoidedUsd)} of PRIME sales / yr` : ""}`}
           title="an exit settles from the vault's LTV headroom when the LTV after it stays at or under max LTV less the gap: the holders who stay keep its loop slice and the Main debt it backs, so their LTV rises. later delevers pay back part of the spared sales" />
-        <Tile label="Lark 4 hole now" value={fmtUsd(r.lark4Now.holeUsd)} sub={`${fmtBps(r.lark4Now.holeBps, 0)} at the oracle · ${fmtUsd(r.lark4Now.holeMarketUsd)} at HOLLAR's market price`} />
+        <Tile label={`${DEPLOYMENT[p.deployment].name} hole now`} value={fmtUsd(r.lark4Now.holeUsd)} sub={`${fmtBps(r.lark4Now.holeBps, 0)} at the oracle · ${fmtUsd(r.lark4Now.holeMarketUsd)} at HOLLAR's market price`} />
       </div>
 
       <div className="cards">

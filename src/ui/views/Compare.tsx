@@ -1,4 +1,5 @@
 import type { ClosedResult, VaultResult } from "../../engine/model/closedForm";
+import { DEPLOYMENT } from "../../engine/params/defaults";
 import { PARAMS, getPath } from "../../engine/params/schema";
 import type { Params, VaultKey } from "../../engine/params/types";
 import { Waterfall } from "../charts/Svg";
@@ -43,6 +44,7 @@ export function Compare({ A, B, rA, rB, onMakeB }: { A: Params; B: Params | null
     const b = getPath(B, d.path);
     return typeof a === "number" && typeof b === "number" ? Math.abs(a - b) > 1e-12 * Math.max(1, Math.abs(a)) : a !== b;
   });
+  const chains = A.deployment !== B.deployment;
   const show = (d: (typeof PARAMS)[number], v: unknown) => (typeof v === "number" ? `${fmtNum(toDisplay(d.unit, v), 6)}${unitLabel(d.unit)}` : String(v));
   return (
     <>
@@ -73,14 +75,15 @@ export function Compare({ A, B, rA, rB, onMakeB }: { A: Params; B: Params | null
           </table>
         </div>
         <div className="card">
-          <h2>Settings that differ ({diffs.length})</h2>
+          <h2>Settings that differ ({diffs.length + (chains ? 1 : 0)})</h2>
           <table className="grid">
             <thead><tr><th>setting</th><th className="num">A</th><th className="num">B</th></tr></thead>
             <tbody>
+              {chains && <tr><td>Deployment</td><td className="num">{DEPLOYMENT[A.deployment].label}</td><td className="num">{DEPLOYMENT[B.deployment].label}</td></tr>}
               {diffs.map((d) => (
                 <tr key={d.path}><td>{d.label}</td><td className="num">{show(d, getPath(A, d.path))}</td><td className="num">{show(d, getPath(B, d.path))}</td></tr>
               ))}
-              {!diffs.length && <tr><td colSpan={3} className="muted">identical so far: switch to B and change something</td></tr>}
+              {!diffs.length && !chains && <tr><td colSpan={3} className="muted">identical so far: switch to B and change something</td></tr>}
             </tbody>
           </table>
         </div>

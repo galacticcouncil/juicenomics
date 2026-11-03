@@ -1,5 +1,5 @@
 import { evaluate, worst, type ClosedResult } from "../model/closedForm";
-import { LARK4 } from "../params/defaults";
+import { baseline } from "../params/defaults";
 import { BY_PATH, getPath, setPath } from "../params/schema";
 import type { Params } from "../params/types";
 
@@ -62,6 +62,7 @@ const pathKnob = (path: string, min?: number, max?: number): Knob => {
 const bothVaults = (key: string, label: string, min: number, max: number, get: (p: Params) => number, set: (p: Params, v: number) => void): Knob => ({
   key, label, unit: "pct", min, max, lever: "admin", get, set,
 });
+const banded = (p: Params) => (p.vaults.btc.on ? p.vaults.btc : p.vaults.eth);
 
 export const KNOBS: Knob[] = [
   {
@@ -69,7 +70,7 @@ export const KNOBS: Knob[] = [
     get: (p) => (p.loop.mode === "lev" ? p.loop.leverage : 1 / (1 - p.loop.primeLt / (p.loop.targetHf + p.loop.hfLag))),
     set: (p, v) => { p.loop.mode = "lev"; p.loop.leverage = v; },
   },
-  bothVaults("bands.target", "Target LTV (every vault)", 0.5, 0.8, (p) => p.vaults.btc.bandTarget, (p, v) => {
+  bothVaults("bands.target", "Target LTV (every vault)", 0.5, 0.8, (p) => banded(p).bandTarget, (p, v) => {
     for (const k of ["eth", "btc"] as const) {
       const gapLo = p.vaults[k].bandTarget - p.vaults[k].bandLo;
       const gapHi = p.vaults[k].bandHi - p.vaults[k].bandTarget;
@@ -78,10 +79,10 @@ export const KNOBS: Knob[] = [
       p.vaults[k].bandHi = Math.min(p.vaults[k].lt - 0.005, v + gapHi);
     }
   }),
-  bothVaults("bands.relever", "Relever gap below target", 0.01, 0.25, (p) => p.vaults.btc.bandTarget - p.vaults.btc.bandLo, (p, v) => {
+  bothVaults("bands.relever", "Relever gap below target", 0.01, 0.25, (p) => banded(p).bandTarget - banded(p).bandLo, (p, v) => {
     for (const k of ["eth", "btc"] as const) p.vaults[k].bandLo = Math.max(0.05, p.vaults[k].bandTarget - v);
   }),
-  bothVaults("bands.delever", "Delever gap above target", 0.005, 0.1, (p) => p.vaults.btc.bandHi - p.vaults.btc.bandTarget, (p, v) => {
+  bothVaults("bands.delever", "Delever gap above target", 0.005, 0.1, (p) => banded(p).bandHi - banded(p).bandTarget, (p, v) => {
     for (const k of ["eth", "btc"] as const) p.vaults[k].bandHi = Math.min(p.vaults[k].lt - 0.005, p.vaults[k].bandTarget + v);
   }),
   pathKnob("pool.feeBps", 0, 10),
@@ -101,8 +102,8 @@ export const KNOBS: Knob[] = [
   pathKnob("market.monitorMinutes", 1, 240),
   {
     key: "pool.depth", label: "Pool 143 depth (× today)", unit: "x", min: 1, max: 10, lever: "ops",
-    get: (p) => p.pool.prime / LARK4.pool.prime,
-    set: (p, v) => { p.pool.prime = LARK4.pool.prime * v; p.pool.hollar = LARK4.pool.hollar * v; },
+    get: (p) => p.pool.prime / baseline(p.deployment).pool.prime,
+    set: (p, v) => { const b = baseline(p.deployment).pool; p.pool.prime = b.prime * v; p.pool.hollar = b.hollar * v; },
   },
   pathKnob("loop.tranche", 500, 25_000),
   {

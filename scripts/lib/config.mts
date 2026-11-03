@@ -1,9 +1,9 @@
 import { readFileSync } from "node:fs";
 import { DEPLOYMENTS, loadLive } from "../../src/engine/live/live";
-import { LARK4, clone } from "../../src/engine/params/defaults";
+import { DEPLOYMENT_KEYS, baseline, clone, isDeployment } from "../../src/engine/params/defaults";
 import { PRESETS, preset } from "../../src/engine/params/presets";
 import { BY_PATH, setPath } from "../../src/engine/params/schema";
-import type { Params, VaultKey } from "../../src/engine/params/types";
+import type { DeploymentKey, Params, VaultKey } from "../../src/engine/params/types";
 import { validate } from "../../src/engine/params/validate";
 import { decode } from "../../src/engine/share/codec";
 
@@ -82,14 +82,25 @@ function deepMerge(target: Record<string, unknown>, src: Record<string, unknown>
   }
 }
 
-/** defaults ← --preset ← --link ← --config ← --live ← --tvl ← --set, then validation */
+/** --deployment, Lark 4 when not given */
+export function deploymentOf(a: Args): DeploymentKey {
+  const d = flag(a, "deployment");
+  if (d === undefined) return "lark4";
+  if (!isDeployment(d)) throw new Error(`unknown deployment ${d} (one of ${DEPLOYMENT_KEYS.join(", ")})`);
+  return d;
+}
+
+/** the deployment's settings ← --preset ← --link ← --config ← --live ← --tvl ← --set, then validation */
 export async function buildParams(a: Args): Promise<{ params: Params; notes: string[] }> {
   const notes: string[] = [];
-  let p = clone(LARK4);
+  const asked = flag(a, "deployment") === undefined ? undefined : deploymentOf(a);
+  let p = clone(baseline(asked));
   const pre = flag(a, "preset");
   if (typeof pre === "string") {
-    if (!PRESETS.some((x) => x.key === pre)) throw new Error(`unknown preset ${pre} (see: sim presets)`);
-    p = preset(pre);
+    const x = PRESETS.find((y) => y.key === pre);
+    if (!x) throw new Error(`unknown preset ${pre} (see: sim presets)`);
+    if (x.only && x.only !== (asked ?? "lark4")) throw new Error(`preset ${pre} is for ${x.only}: add --deployment ${x.only}`);
+    p = preset(pre, asked);
   }
   const link = flag(a, "link");
   if (typeof link === "string") {
@@ -110,8 +121,9 @@ export async function buildParams(a: Args): Promise<{ params: Params; notes: str
       p = q as unknown as Params;
     }
   }
+  if (asked && p.deployment !== asked) throw new Error(`--deployment ${asked}, but the preset, link or config is on ${p.deployment}`);
   if (flag(a, "live")) {
-    const dep = DEPLOYMENTS.find((d) => d.key === str(a, "deployment", "lark4")) ?? DEPLOYMENTS[0];
+    const dep = DEPLOYMENTS.find((d) => d.key === p.deployment) ?? DEPLOYMENTS[0];
     const at = flag(a, "block");
     const s = await loadLive(dep, str(a, "rpc", dep.rpc), typeof at === "string" ? Number(at) : undefined);
     p = s.apply(p);

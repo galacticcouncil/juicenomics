@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { LARK4, clone } from "../src/engine/params/defaults";
+import { LARK0, LARK4, clone } from "../src/engine/params/defaults";
 import type { Params } from "../src/engine/params/types";
 import { cappedShare, evaluate } from "../src/engine/model/closedForm";
 import { bands } from "../src/engine/model/bands";
@@ -131,6 +131,25 @@ describe("defaults", () => {
     const r = evaluate(clone(LARK4));
     expect(r.active).toEqual(["btc"]);
     expect(r.totals.tvlUsd).toBeCloseTo(r.vaults.btc.tvlUsd, 6);
+  });
+  it("Lark 0 runs jETH alone on GIGAETH at the same band, fee and discounts, with its own lane and the Lark 60 s delay", () => {
+    expect(LARK0.deployment).toBe("lark0");
+    expect(LARK0.vaults.eth.on).toBe(true);
+    expect(LARK0.vaults.btc.on).toBe(false);
+    expect(LARK0.vaults.eth.maxLtv).toBe(0.8);
+    expect([LARK0.vaults.eth.bandLo, LARK0.vaults.eth.bandTarget, LARK0.vaults.eth.bandHi]).toEqual([0.65, 0.75, 0.83]);
+    expect(LARK0.vaults.eth.tvlCap).toBe(100);
+    expect(LARK0.fees.protocolFeeBps).toBe(6900);
+    expect([LARK0.fees.discountMain, LARK0.fees.discountLoop, LARK0.fees.loopDiscountCapUsd]).toEqual([0.4, 0.9, 5_000_000]);
+    expect([LARK0.policy.headroomOn, LARK0.policy.headroomGapBps, LARK0.policy.admissionBps, LARK0.policy.reserveUsd]).toEqual([true, 0, 250, 1000]);
+    expect(LARK0.policy.cooldownHours * 3600).toBeCloseTo(60, 9);
+    expect(LARK0.policy.costReserveBps).toBe(35);
+    expect([LARK0.loop.laneCapBps, LARK0.loop.tranche, LARK0.loop.budgetCap, LARK0.loop.budgetRefillPerSec, LARK0.loop.paceSec]).toEqual([35, 2500, 25_000, 10, 60]);
+    expect([LARK4.loop.laneCapBps, LARK4.loop.budgetRefillPerSec]).toEqual([27, 50]);
+    const r = evaluate(clone(LARK0));
+    expect(r.active).toEqual(["eth"]);
+    expect(r.vaults.eth.netWithInKind - r.vaults.eth.net).toBeCloseTo(0.015, 9);
+    expect(r.issues).toEqual([]);
   });
   it("Lark 4 leverage ~6.06× and today's hole is principal less equityOf", () => {
     const r = evaluate(clone(LARK4));

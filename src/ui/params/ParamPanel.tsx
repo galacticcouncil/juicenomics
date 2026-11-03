@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { LARK4 } from "../../engine/params/defaults";
+import { DEPLOYMENT, baseline } from "../../engine/params/defaults";
 import { GROUPS, PARAMS, getPath, type ParamDef } from "../../engine/params/schema";
 import type { Params } from "../../engine/params/types";
 import { fmtNum, fromDisplay, toDisplay, unitLabel } from "../fmt";
@@ -62,7 +62,7 @@ const LEVER: Record<string, { label: string; title: string }> = {
 
 function changed(p: Params, d: ParamDef): boolean {
   const a = getPath(p, d.path);
-  const b = getPath(LARK4, d.path);
+  const b = getPath(baseline(p.deployment), d.path);
   return typeof a === "number" && typeof b === "number" ? Math.abs(a - b) > 1e-12 * Math.max(1, Math.abs(b)) : a !== b;
 }
 
@@ -103,15 +103,16 @@ function NumberField({ d, value, onChange }: { d: ParamDef; value: number; onCha
 function Row({ d, p, set }: { d: ParamDef; p: Params; set: (path: string, v: unknown) => void }) {
   const value = getPath(p, d.path);
   const isChanged = changed(p, d);
-  const def = getPath(LARK4, d.path);
+  const def = getPath(baseline(p.deployment), d.path);
+  const chain = DEPLOYMENT[p.deployment].name;
   const defText = typeof def === "number" ? `${fmtNum(toDisplay(d.unit, def), 6)}${unitLabel(d.unit)}` : String(def);
   return (
     <div className={`row ${isChanged ? "changed" : ""}`}>
       <div className="rowhead">
-        <button className="dot" title={isChanged ? `reset to Lark 4 (${defText})` : "Lark 4 value"} disabled={!isChanged} onClick={() => set(d.path, def)}>
+        <button className="dot" title={isChanged ? `reset to ${chain} (${defText})` : `${chain} value`} disabled={!isChanged} onClick={() => set(d.path, def)}>
           {isChanged ? "●" : "○"}
         </button>
-        <span className="plabel" title={`${d.help}${d.source ? `\nsource: ${d.source}` : ""}\nLark 4: ${defText}`}>
+        <span className="plabel" title={`${d.help}${d.source ? `\nsource: ${d.source}` : ""}\n${chain}: ${defText}`}>
           {d.label}
         </span>
         <span className={`lever ${d.lever}`} title={LEVER[d.lever].title}>{LEVER[d.lever].label}</span>
