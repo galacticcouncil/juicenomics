@@ -1,0 +1,118 @@
+{
+  "source": "Lark 0 (refork 2 Nov 2026 from mainnet #16,544,945, genesis 0xa637…0a2a)",
+  "genesis": "0xa637c6bb6f61286b935b883bf5c6f9dbb00aa34054d0558952f9e7284e580a2a",
+  "evmBlock": 1375,
+  "substrateBlock": 1375,
+  "timestamp": 1793670264,
+  "prime": {
+    "price": 1.0679541,
+    "ltv": 0.85,
+    "lt": 0.88,
+    "supplyApr": 0.002988108992188909
+  },
+  "hollar": {
+    "borrowApr": 0.044016888917752794
+  },
+  "discount": {
+    "mainBps": 4000,
+    "loopBps": 9000,
+    "loopCap": 5000000
+  },
+  "loop": {
+    "collateralUsd": 49814.39529868,
+    "debtUsd": 40515.56074768,
+    "healthFactor": 1.0819711501919709,
+    "principal": 11283.82986864,
+    "equityUsd": 11193.0407661,
+    "targetHf": 1.05,
+    "deployHfFloor": 1.05,
+    "deLeverTrigger": 1.1,
+    "harvestThreshold": 0.0002,
+    "deployTranche": 2500,
+    "unwindTranche": 2500,
+    "dcaSlippagePpm": 3500,
+    "intentDriftBps": 2,
+    "admissionMaxDeficitBps": 250
+  },
+  "vaults": {
+    "eth": {
+      "key": "eth",
+      "name": "jETH",
+      "collateral": "GIGAETH",
+      "assetId": 4200,
+      "address": "0xa64e418978482d5de91717cf6c77e1f40105f2ab",
+      "deployed": true,
+      "price": 2294.86167863,
+      "ltv": 0.8,
+      "lt": 0.85,
+      "units": 6.556008438520125,
+      "tvlCap": 100,
+      "withdrawalDelay": 60,
+      "mainDebt": 11283.849004253538,
+      "loopPrincipal": 11283.82986864,
+      "loopEquityUsd": 11193.0407661,
+      "protocolFeeBps": 6900,
+      "band": {
+        "targetGap": 500,
+        "relever": 1000,
+        "delever": 800
+      },
+      "exitHeadroom": {
+        "enabled": true,
+        "gapBps": 0
+      },
+      "protocolReserve": 1000
+    },
+    "btc": {
+      "key": "btc",
+      "name": "jBTC",
+      "collateral": "tBTC",
+      "assetId": 1000765,
+      "units": 1.867467104306708,
+      "tvlCap": 3,
+      "deployed": false,
+      "address": null,
+      "price": 76809.03281788,
+      "ltv": 0.8,
+      "lt": 0.85,
+      "withdrawalDelay": 60,
+      "mainDebt": 0,
+      "loopPrincipal": 0,
+      "loopEquityUsd": 0,
+      "protocolFeeBps": 6900,
+      "band": {
+        "targetGap": 500,
+        "relever": 1000,
+        "delever": 800
+      },
+      "exitHeadroom": {
+        "enabled": true,
+        "gapBps": 0
+      },
+      "protocolReserve": 0
+    }
+  },
+  "pool143": {
+    "feePpm": 100,
+    "amp": 100,
+    "pegs": [
+      [
+        "182481251874003816124996340746167056544",
+        "170869961845378387405793781395316096782"
+      ],
+      [
+        "1",
+        "1"
+      ]
+    ],
+    "prime": 462660.455138,
+    "hollar": 579801.9154611848
+  },
+  "execution": {
+    "laneCapBps": 35,
+    "trancheMax": 2500,
+    "budgetCap": 25000,
+    "refillPerSec": 10,
+    "paceSec": 60
+  }
+}
