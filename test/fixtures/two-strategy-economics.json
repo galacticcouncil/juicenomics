@@ -1,0 +1,220 @@
+{
+  "block": "16630324",
+  "marketSnapshot": "juicer-vault/docs/evidence/two-strategy-2026-11-05/market.json",
+  "assumptions": {
+    "marginalNewCollateralUSD": 100000,
+    "mainLtv": 0.75,
+    "legacyHf": 1.05,
+    "apyHf": 1.3,
+    "fee": 0.69,
+    "primeGrowthApr": 0.062,
+    "apyGrowthApr": 0.1297,
+    "growthSource": "garden note-propeller-tbtc-sizing section 8; historical assumptions, not refreshed fair-value yields",
+    "mainDiscount": 0.4,
+    "legacyLoopDiscount": 0.9,
+    "primeRateCurveRay": {
+      "optimal": "750000000000000000000000000",
+      "base": "0",
+      "slope1": "20000000000000000000000000",
+      "slope2": "200000000000000000000000000"
+    },
+    "apyConvention": "monthly compounding of constant net annualized carry; protocol number is revenue divided by TVL",
+    "scope": "post-prerequisite scenario, marginal new TVL added to the pinned market; no claim of executable current yield",
+    "excluded": [
+      "entry and migration costs",
+      "exit costs",
+      "rebalance churn",
+      "pool depth/refill",
+      "gas",
+      "rate changes over time",
+      "oracle impairment",
+      "native collateral yield",
+      "pool trading fee revenue"
+    ]
+  },
+  "scenarios": [
+    {
+      "weight": 0,
+      "fee": 0.69,
+      "tvl": 100000,
+      "mainDebtHollar": 75000,
+      "leverage": [
+        6.176470588235293,
+        3.095238095238095
+      ],
+      "equity": [
+        75000,
+        0
+      ],
+      "grossAssetsUSD": [
+        463235.29411764693,
+        0
+      ],
+      "debtUSD": [
+        388235.29411764693,
+        0
+      ],
+      "extraPrimeSupply": 433609.65991272504,
+      "extraPrimeDebt": 0,
+      "primeSupply": 7031944.315449725,
+      "primeDebt": 2505735.418693,
+      "primeCash": 4526237.433462725,
+      "utilization": 0.35633462633816065,
+      "primeBorrowRate": 0.009502256702350952,
+      "primeSupplyRate": 0.0027087864731212075,
+      "grossIncomeUSD": [
+        29975.39373387232,
+        0
+      ],
+      "debtCostUSD": [
+        1708.8909815127547,
+        0
+      ],
+      "carryUSD": [
+        28266.502752359564,
+        0
+      ],
+      "protocolFeeUSD": 19503.886899128098,
+      "mainCostUSD": 1980.7600012988755,
+      "depositorUSD": 6781.855851932591,
+      "protocolUSD": 23193.53788193973,
+      "depositorApr": 0.0678185585193259,
+      "depositorMonthlyApy": 0.06996681892629075,
+      "protocolRevenuePerTvl": 0.2319353788193973,
+      "primeBorrowCapFits": true,
+      "primeLiquidityFits": true,
+      "apyTokensAtCurrentOracle": 0,
+      "activationChecks": {
+        "registryDecimals": true,
+        "apyOracleUpdatedWithinDay": false,
+        "isolatedBorrowAllowed": false,
+        "isolationHeadroom": false,
+        "primeBorrowHeadroom": true,
+        "independentBlockAgreement": true,
+        "independentBalanceAgreement": true
+      }
+    },
+    {
+      "weight": 0.25,
+      "fee": 0.69,
+      "tvl": 100000,
+      "mainDebtHollar": 75000,
+      "leverage": [
+        6.176470588235293,
+        3.095238095238095
+      ],
+      "equity": [
+        56250,
+        18750
+      ],
+      "grossAssetsUSD": [
+        347426.4705882352,
+        58035.71428571428
+      ],
+      "debtUSD": [
+        291176.4705882352,
+        39285.71428571428
+      ],
+      "extraPrimeSupply": 325207.2449345438,
+      "extraPrimeDebt": 36773.24553454857,
+      "primeSupply": 6923541.900471544,
+      "primeDebt": 2542508.6642275485,
+      "primeCash": 4381061.7729499955,
+      "utilization": 0.3672250737242481,
+      "primeBorrowRate": 0.009792668632646618,
+      "primeSupplyRate": 0.002876890768464629,
+      "grossIncomeUSD": [
+        22539.949182426124,
+        7547.228647391984
+      ],
+      "debtCostUSD": [
+        1281.6682361345659,
+        2820.426267711117
+      ],
+      "carryUSD": [
+        21258.280946291557,
+        4726.802379680867
+      ],
+      "protocolFeeUSD": 17929.70749492097,
+      "mainCostUSD": 1980.7600012988755,
+      "depositorUSD": 6074.615829752578,
+      "protocolUSD": 21269.07812875378,
+      "depositorApr": 0.06074615829752578,
+      "depositorMonthlyApy": 0.06246631866380259,
+      "protocolRevenuePerTvl": 0.2126907812875378,
+      "primeBorrowCapFits": true,
+      "primeLiquidityFits": true,
+      "apyTokensAtCurrentOracle": 42447.6041924378,
+      "activationChecks": {
+        "registryDecimals": true,
+        "apyOracleUpdatedWithinDay": false,
+        "isolatedBorrowAllowed": false,
+        "isolationHeadroom": false,
+        "primeBorrowHeadroom": true,
+        "independentBlockAgreement": true,
+        "independentBalanceAgreement": true
+      }
+    },
+    {
+      "weight": 0.5,
+      "fee": 0.69,
+      "tvl": 100000,
+      "mainDebtHollar": 75000,
+      "leverage": [
+        6.176470588235293,
+        3.095238095238095
+      ],
+      "equity": [
+        37500,
+        37500
+      ],
+      "grossAssetsUSD": [
+        231617.64705882347,
+        116071.42857142857
+      ],
+      "debtUSD": [
+        194117.64705882347,
+        78571.42857142857
+      ],
+      "extraPrimeSupply": 216804.82995636252,
+      "extraPrimeDebt": 73546.49106909714,
+      "primeSupply": 6815139.485493363,
+      "primeDebt": 2579281.909762097,
+      "primeCash": 4235886.112437266,
+      "utilization": 0.3784619691488871,
+      "primeBorrowRate": 0.010092319177303657,
+      "primeSupplyRate": 0.0030556471912971343,
+      "grossIncomeUSD": [
+        15068.0359303372,
+        15094.457294783968
+      ],
+      "debtCostUSD": [
+        854.4454907563774,
+        5664.3965067881445
+      ],
+      "carryUSD": [
+        14213.590439580823,
+        9430.060787995822
+      ],
+      "protocolFeeUSD": 16314.119347027883,
+      "mainCostUSD": 1980.7600012988755,
+      "depositorUSD": 5348.771879249885,
+      "protocolUSD": 19307.91842615505,
+      "depositorApr": 0.053487718792498855,
+      "depositorMonthlyApy": 0.05481866028452953,
+      "protocolRevenuePerTvl": 0.19307918426155052,
+      "primeBorrowCapFits": true,
+      "primeLiquidityFits": true,
+      "apyTokensAtCurrentOracle": 84895.2083848756,
+      "activationChecks": {
+        "registryDecimals": true,
+        "apyOracleUpdatedWithinDay": false,
+        "isolatedBorrowAllowed": false,
+        "isolationHeadroom": false,
+        "primeBorrowHeadroom": true,
+        "independentBlockAgreement": true,
+        "independentBalanceAgreement": true
+      }
+    }
+  ]
+}

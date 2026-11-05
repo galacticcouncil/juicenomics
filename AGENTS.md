@@ -13,6 +13,8 @@ npm run sim -- live --block 40000                   # chain state as a config + 
 npm run sim -- live --deployment lark0              # Lark 0's chain state: jETH on GIGAETH
 npm run sim -- backtest [--deployment lark0]        # replay a deployment's history against the simulator
 npm run sim -- hollar                               # HOLLAR supply, facilitator buckets, HSM inventory (mainnet)
+npm run sim -- strategies --weight 0.25 --fee 0.69    # marginal two-strategy carry, pinned mainnet, Main still HOLLAR
+npm run sim -- strategies --params                   # independent strategy settings, ranges and defaults
 npm run sim -- link 'https://juicenomics.lark.hydration.cloud/#s=2z…'   # decode a share link
 ```
 
@@ -76,3 +78,12 @@ Options apply in this order, and all of them are optional: `--deployment`, then 
 - **HOLLAR:** each $1 deposited borrows about L·ℓ HOLLAR, all of it sold for PRIME. `market.hollarHeadroomUsd` defaults to the mainnet facilitator's headroom (2.13M on 21 Oct), and the closed form flags configs that exceed it.
 - **Growth:** `flows.growth` grows TVL in dollars, so falling prices slow it in the Monte Carlo. The closed form grows it at today's prices.
 - **Publishing:** `scripts/publish-lark.sh` deploys the web app. Only run it when a human asked for a deploy.
+
+## two-strategy preview
+
+- `sim strategies` evaluates the same model as the **Two strategies** tab. `--tvl` is additional depositor collateral, `--weight` is the apyUSD fraction and `--fee` is the single blended fee. `--set key=number` accepts the keys in `strategies --params`; `--link` and `--config` restore strategy settings. Legacy flags such as `--live` are rejected.
+- Main debt stays HOLLAR. The legacy strategy supplies PRIME and borrows HOLLAR; the new strategy supplies apyUSD and borrows appreciating PRIME in a separate account. There is no active reallocation model. Start with 0% apyUSD.
+- The snapshot is pinned to mainnet block 16630324, 2026-11-05. Positive apyUSD allocations are hypothetical: the oracle, isolation eligibility and isolation ceiling are blocked. Passing capacity checks is not evidence of executability. The model does not quote swaps or run a second-pool Monte Carlo.
+- Links use an independent `ts=1.` token with complete strategy settings and `t=strategies`; v1–v3 legacy links retain their existing meaning. `sim link` decodes either type. Legacy `cf`/`mc` reject strategy links instead of silently running PRIME only.
+- `SIM_URL=http://localhost:4173/ node scripts/smoke-strategies.mjs` checks the new view, sharing, export, blockers, mobile layout and legacy-tab isolation. The original `scripts/smoke.mjs` still checks the legacy model.
+- `scripts/publish-lark.sh two-strategy` publishes only the separate preview stack/subdomain, with a distinct image tag. The no-argument command remains production. See [docs/two-strategy.md](docs/two-strategy.md) for scope and reproduction.

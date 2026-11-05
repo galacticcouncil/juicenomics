@@ -14,7 +14,7 @@ async function open(url, scheme = "light") {
   const errors = [];
   page.on("pageerror", (e) => errors.push(String(e)));
   page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
-  await page.goto(url, { waitUntil: "networkidle" });
+  await page.goto(url.includes("#") ? url : `${url}#t=overview`, { waitUntil: "networkidle" });
   await page.waitForSelector(".tile .value", { timeout: 20000 });
   return { page, errors };
 }

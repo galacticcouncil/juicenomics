@@ -104,6 +104,10 @@ export async function buildParams(a: Args): Promise<{ params: Params; notes: str
   }
   const link = flag(a, "link");
   if (typeof link === "string") {
+    const hash = link.includes("#") ? new URLSearchParams(link.slice(link.indexOf("#") + 1)) : null;
+    if (link.startsWith("1.") || hash?.get("t") === "strategies" || (!hash?.get("t") && hash?.has("ts"))) {
+      throw new Error("two-strategy links need sim strategies; the legacy Monte Carlo and closed form do not model apyUSD");
+    }
     const token = link.includes("#") ? (new URLSearchParams(link.slice(link.indexOf("#") + 1)).get("s") ?? "") : link.replace(/^s=/, "");
     const d = await decode(token);
     if (d.error) throw new Error(`link: ${d.error}`);
