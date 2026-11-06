@@ -6,6 +6,8 @@ Economics dashboard for Juicer, Hydration's leveraged PRIME loop vaults: jBTC on
 
 The **Two strategies** tab compares PRIME / HOLLAR and apyUSD / PRIME with HOLLAR Main debt and one blended harvest fee. It starts at 100% legacy / 0% apyUSD, models marginal new funding without active reallocation, and exposes the pinned market blockers and capacity checks alongside the estimates. Its settings, share links and JSON export are separate from the legacy Lark simulations. See [the model and snapshot scope](docs/two-strategy.md).
 
+The **vDOT / DOT** tab explores a replacement source for new HOLLAR funding: supply vDOT and borrow DOT in DOT eMode. It compares fees and the PRIME benchmark, models reserve feedback from aDOT swap routes, and separates staking carry from DOT/USD and vDOT/DOT price shocks. Pinned router quotes show why entry costs cannot be ignored. [Model, evidence and limits](docs/vdot-dot.md); headless: `npm run sim -- vdot`.
+
 - **What it covers:** every protocol, market and improvement setting has a control. The header picks the deployment a scenario models; presets, resets, share links and live state follow it.
   - **Lark 4** (default): the 30 Oct refork runs jBTC alone, so jETH starts switched off.
   - **Lark 0:** the 2 Nov refork runs jETH alone on GIGAETH, launched through the mainnet path, so jBTC starts switched off. Same band, fee, discounts and headroom exits; its entry lane caps at 35 bps and refills at 10 HOLLAR / s (Lark 4: 27 bps, 50 / s).

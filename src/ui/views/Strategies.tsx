@@ -1,25 +1,8 @@
-import { useMemo, useState } from "react";
-import { evaluateStrategies, STRATEGY_DEFAULTS, STRATEGY_FIELDS, STRATEGY_MARKET, STRATEGY_SCOPE, type StrategyField, type StrategyParams } from "../../engine/model/twoStrategy";
+import { useMemo } from "react";
+import { evaluateStrategies, STRATEGY_DEFAULTS, STRATEGY_FIELDS, STRATEGY_MARKET, STRATEGY_SCOPE, type StrategyParams } from "../../engine/model/twoStrategy";
 import { StackBar, Waterfall } from "../charts/Svg";
 import { fmtNum, fmtPct, fmtUsd, fmtX } from "../fmt";
-
-function Field({ field, value, onChange }: { field: StrategyField; value: number; onChange: (value: number) => void }) {
-  const scale = field.unit === "%" ? 100 : 1;
-  const display = Number((value * scale).toPrecision(12));
-  const [text, setText] = useState("");
-  const [editing, setEditing] = useState(false);
-  return <label className="strategy-field">
-    <span>{field.label} <span className="muted">{field.unit}</span></span>
-    <input aria-label={field.label} type="number" value={editing ? text : String(display)} min={field.min * scale} max={field.max * scale} step={field.step * scale}
-      onFocus={() => { setText(String(display)); setEditing(true); }}
-      onChange={(e) => {
-        setText(e.target.value);
-        const v = Number(e.target.value) / scale;
-        if (e.target.value !== "" && Number.isFinite(v) && v >= field.min && v <= field.max) onChange(v);
-      }} onBlur={() => setEditing(false)} />
-    <small>{field.help}</small>
-  </label>;
-}
+import { NumericField } from "../params/NumericField";
 
 export function Strategies({ p, onChange }: { p: StrategyParams; onChange: (p: StrategyParams) => void }) {
   const r = useMemo(() => evaluateStrategies(p), [p]);
@@ -61,7 +44,7 @@ export function Strategies({ p, onChange }: { p: StrategyParams; onChange: (p: S
       <aside className="strategy-settings" aria-label="two-strategy settings">
         {(["Funding", "Carry assumptions", "Capacity limits"] as const).map((group) => <details key={group} open={group === "Funding"}>
           <summary>{group}</summary>
-          {STRATEGY_FIELDS.filter((d) => d.group === group).map((d) => <Field key={d.key} field={d} value={p[d.key]} onChange={(v) => onChange({ ...p, [d.key]: v })} />)}
+          {STRATEGY_FIELDS.filter((d) => d.group === group).map((d) => <NumericField key={d.key} field={d} value={p[d.key]} onChange={(v) => onChange({ ...p, [d.key]: v })} />)}
         </details>)}
       </aside>
       <div className="strategy-results">

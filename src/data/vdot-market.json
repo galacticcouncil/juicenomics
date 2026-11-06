@@ -1,0 +1,304 @@
+{
+  "observedAt": "2026-11-06T23:17:12.891Z",
+  "rpc": "https://hdx.tarn.hydration.cloud",
+  "ws": "wss://hdx.tarn.hydration.cloud",
+  "block": "16706517",
+  "hash": "0x95fc79bfdb3d780b1839ece009bd62cb9e89d12d11f2afe99de715f9a3334683",
+  "genesis": "0xafdc188f45c71dacbaa0b62e16a91f726c7b8699a9748cdf715459de6b7f366d",
+  "chainId": 222222,
+  "timestamp": "1794006660",
+  "runtime": 458,
+  "pool": "0x1b02E051683b5cfaC5929C25E84adb26ECf87B38",
+  "oracle": "0xAD33C0F0C42C5A0EAA65b5895D2BdB20cb6E8760",
+  "assets": {
+    "5": {
+      "symbol": "DOT",
+      "decimals": 10,
+      "type": "Token"
+    },
+    "15": {
+      "symbol": "vDOT",
+      "decimals": 10,
+      "type": "Token"
+    },
+    "43": {
+      "symbol": "PRIME",
+      "decimals": 6,
+      "type": "Token"
+    },
+    "222": {
+      "symbol": "HOLLAR",
+      "decimals": 18,
+      "type": "Erc20"
+    }
+  },
+  "reserves": {
+    "vDOT": {
+      "address": "0x000000000000000000000000000000010000000f",
+      "aToken": "0x0e13b904F4168F93814216B6874cA8349457f263",
+      "variableDebtToken": "0x89C28953e5AA32fa61cd2314868461B77B3D88E7",
+      "stableDebtToken": "0x01F3bD47F97bb3f8484124CCf3b4F93Ee5Fee2c1",
+      "configuration": "753997829268861114597725810779424684787518634727280",
+      "priceUSD8": "153278548",
+      "decimals": 10,
+      "ltvBps": "6000",
+      "ltBps": "7000",
+      "active": "1",
+      "frozen": "0",
+      "borrowing": "1",
+      "paused": "0",
+      "eMode": "2",
+      "reserveFactorBps": "2000",
+      "borrowCap": "111111",
+      "supplyCap": "2222222",
+      "isolationCeilingUSD2": "0",
+      "isolationDebtUSD2": "0",
+      "liquidityRateRay": "159137421269892687864",
+      "borrowRateRay": "136257229098083013404716",
+      "rateStrategy": "0x5383a606ECe147e94C1fA0b7375bc778f132b832",
+      "supply": "9655222918455460",
+      "variableDebt": "14095649700533",
+      "stableDebt": "0",
+      "availableLiquidity": "9641127335321714",
+      "oracleSource": "0x2fFa376E0a84606e4Ccb3738071312A34Cebad6C",
+      "round": {
+        "available": false
+      }
+    },
+    "DOT": {
+      "address": "0x0000000000000000000000000000000100000005",
+      "aToken": "0x02639ec01313c8775Fae74F2dad1118c8A8a86dA",
+      "variableDebtToken": "0x34321CB7334807eb718B3E1DdFaEb0c6c0403F1A",
+      "stableDebtToken": "0xdc92F2FD6137B0bd5766Ddf59C39C828b24F5248",
+      "configuration": "753997831161164877079002568592629221489798055993152",
+      "priceUSD8": "91825381",
+      "decimals": 10,
+      "ltvBps": "8000",
+      "ltBps": "8500",
+      "active": "1",
+      "frozen": "0",
+      "borrowing": "1",
+      "paused": "0",
+      "eMode": "2",
+      "reserveFactorBps": "1000",
+      "borrowCap": "17000000",
+      "supplyCap": "25000000",
+      "isolationCeilingUSD2": "0",
+      "isolationDebtUSD2": "0",
+      "liquidityRateRay": "7816705052132169308994182",
+      "borrowRateRay": "16762835836239793007042275",
+      "rateStrategy": "0xD3798D35EE1C552bB7C5Ee6641118cf800Ea565A",
+      "supply": "43992678194660619",
+      "variableDebt": "22793804580862990",
+      "stableDebt": "0",
+      "availableLiquidity": "21199140391585954",
+      "oracleSource": "0xFBCa0A6dC5B74C042DF23025D99ef0F1fcAC6702",
+      "round": {
+        "available": true,
+        "roundId": "16706517",
+        "answer": "91825381",
+        "startedAt": "1794004939",
+        "updatedAt": "1794004939",
+        "answeredInRound": "16706517",
+        "ageSeconds": "1721"
+      }
+    },
+    "PRIME": {
+      "address": "0x000000000000000000000000000000010000002b",
+      "aToken": "0x4C892a298A9C6b4cEd988b3D6E9CF93333aADcF7",
+      "variableDebtToken": "0xe3A3b04d701B965c77bA903376B7F92c83c866C5",
+      "stableDebtToken": "0x8F99D9F57677B77d9e8e180bcd22AC4067E75B31",
+      "configuration": "7898421875141789002343857785267299399002708373593404198910575983634424116",
+      "priceUSD8": "106866518",
+      "decimals": 6,
+      "ltvBps": "8500",
+      "ltBps": "8800",
+      "active": "1",
+      "frozen": "0",
+      "borrowing": "1",
+      "paused": "0",
+      "eMode": "0",
+      "reserveFactorBps": "2000",
+      "borrowCap": "3000000",
+      "supplyCap": "15000000",
+      "isolationCeilingUSD2": "1200000000",
+      "isolationDebtUSD2": "552681559",
+      "liquidityRateRay": "3018312205445988417662658",
+      "borrowRateRay": "10030473909452115908230327",
+      "rateStrategy": "0x747611Fdfb7868cFC7BDBac1934bD5cEA111F3e9",
+      "supply": "6661953565967",
+      "variableDebt": "2505867362815",
+      "stableDebt": "0",
+      "availableLiquidity": "4156141131526",
+      "oracleSource": "0x09221057Cf7E75953D199FB319E606972A6A82Cd",
+      "round": {
+        "available": true,
+        "roundId": "2077",
+        "answer": "106866518",
+        "startedAt": "1794004602",
+        "updatedAt": "1794004602",
+        "answeredInRound": "2077",
+        "ageSeconds": "2058"
+      }
+    },
+    "HOLLAR": {
+      "address": "0x531a654d1696ED52e7275A8cede955E82620f99a",
+      "aToken": "0x8C0f3b9602374198974d2B2679d14a386f5b108e",
+      "variableDebtToken": "0x342923782cCaEBf9c38DD9cb40436e82C42c73B5",
+      "stableDebtToken": "0xD95d27688F028AdDBe93Fa0e19FB095eE1111Dd1",
+      "configuration": "2671197528984125440",
+      "priceUSD8": "100000000",
+      "decimals": 18,
+      "ltvBps": "0",
+      "ltBps": "0",
+      "active": "1",
+      "frozen": "0",
+      "borrowing": "1",
+      "paused": "0",
+      "eMode": "0",
+      "reserveFactorBps": "0",
+      "borrowCap": "0",
+      "supplyCap": "0",
+      "isolationCeilingUSD2": "0",
+      "isolationDebtUSD2": "0",
+      "liquidityRateRay": "0",
+      "borrowRateRay": "44016888917752794000000000",
+      "rateStrategy": "0x39DfB27D814DB32F904a17560837c9Be8BF1B761",
+      "supply": "0",
+      "variableDebt": "10177625548081836191081253",
+      "stableDebt": "0",
+      "availableLiquidity": "72822447556598950071763",
+      "oracleSource": "0x6096C9D71F7c06024578a62F4B608a1Bb06834F8",
+      "round": {
+        "available": false
+      }
+    }
+  },
+  "curves": {
+    "vDOT": {
+      "optimal": "750000000000000000000000000",
+      "base": "0",
+      "slope1": "70000000000000000000000000",
+      "slope2": "3000000000000000000000000000"
+    },
+    "DOT": {
+      "optimal": "850000000000000000000000000",
+      "base": "0",
+      "slope1": "27500000000000000000000000",
+      "slope2": "467500000000000000000000000"
+    },
+    "PRIME": {
+      "optimal": "750000000000000000000000000",
+      "base": "0",
+      "slope1": "20000000000000000000000000",
+      "slope2": "200000000000000000000000000"
+    }
+  },
+  "eMode": {
+    "ltv": 8500,
+    "liquidationThreshold": 9200,
+    "liquidationBonus": 10450,
+    "priceSource": "0x0000000000000000000000000000000000000000",
+    "label": "DOT"
+  },
+  "vdotGrowth": {
+    "oracle": "0x00000100626966726f73746f000000050000000f",
+    "latestRate": "166923945",
+    "pastRate": "166325910",
+    "pastBlock": "15525295",
+    "pastTimestamp": "1791414660",
+    "elapsedSeconds": 2592000,
+    "windowReturn": 0.0035955612688365335,
+    "simpleAnnualizedApr": 0.04374599543751116,
+    "method": "annualized growth in the on-chain Bifrost DOT-per-vDOT rate, excluding DOT/USD; backward-looking assumption",
+    "feedEntry": [
+      {
+        "price": {
+          "n": "0x0000000000000000012b39c4be8aee19",
+          "d": "0x000000000000000000b34238c0d9a401"
+        },
+        "volume": {
+          "aIn": 0,
+          "bOut": 0,
+          "aOut": 0,
+          "bIn": 0
+        },
+        "liquidity": {
+          "a": 0,
+          "b": 0
+        },
+        "sharesIssuance": null,
+        "updatedAt": 16705982
+      },
+      7342991
+    ],
+    "feedTimestamp": "1794005472",
+    "feedAgeSeconds": "1188"
+  },
+  "pool690": {
+    "config": {
+      "assets": [
+        15,
+        1001
+      ],
+      "initialAmplification": 1000,
+      "finalAmplification": 222,
+      "initialBlock": 9991888,
+      "finalBlock": 10308688,
+      "fee": 690
+    },
+    "account": "0xe21da918e4176b72ef1930ffaa17edcb03b9b739c2843fb0cf096283a7d9c261",
+    "balances": {
+      "15": "11682577448293748",
+      "1001": "17873063121157737"
+    },
+    "pegs": {
+      "source": [
+        {
+          "mmOracle": "0xaafd758688cefd0a7b7770a825f1aad551e16185"
+        },
+        {
+          "value": [
+            1,
+            1
+          ]
+        }
+      ],
+      "updatedAt": 16705921,
+      "maxPegUpdate": 40,
+      "current": [
+        [
+          "0xe38b8f29fb8b06b461b26615d8c89abd",
+          "0x885110e482217ffd37b3731e43a31d4e"
+        ],
+        [
+          1,
+          1
+        ]
+      ]
+    }
+  },
+  "crosscheck": {
+    "rpc": "https://rpc.hydradx.cloud",
+    "hash": "0x95fc79bfdb3d780b1839ece009bd62cb9e89d12d11f2afe99de715f9a3334683",
+    "reserves": {
+      "vDOT": {
+        "supplyResidual": "0",
+        "debtResidual": "0"
+      },
+      "DOT": {
+        "supplyResidual": "0",
+        "debtResidual": "0"
+      },
+      "PRIME": {
+        "supplyResidual": "0",
+        "debtResidual": "0"
+      },
+      "HOLLAR": {
+        "supplyResidual": "0",
+        "debtResidual": "0"
+      }
+    },
+    "matches": true
+  }
+}

@@ -183,6 +183,8 @@ button.primary:hover:not(:disabled) { background: color-mix(in srgb, var(--serie
 .strategies summary { cursor: pointer; padding: 12px; font-weight: 600; }
 .strategy-field { display: grid; gap: 6px; padding: 8px 14px 14px; }
 .strategy-field input { box-sizing: border-box; width: 100%; padding: 7px; font-variant-numeric: tabular-nums; }
+.strategy-field input[type="checkbox"] { width: auto; margin: 0; }
+.strategy-field.toggle > span { display: flex; align-items: center; gap: 8px; }
 .strategy-field small { color: var(--text-secondary); line-height: 1.45; }
 .strategy-results { min-width: 0; }
 .strategy-results > .card, .strategy-cards { margin-bottom: 14px; }
@@ -197,6 +199,8 @@ button.primary:hover:not(:disabled) { background: color-mix(in srgb, var(--serie
 .strategy-checks .pass { color: var(--text-secondary); }
 .strategy-checks .fail { color: var(--critical); font-weight: 600; }
 .strategy-hash { overflow-wrap: anywhere; }
+.vdot-risk { border-color: var(--series-2); }
+.vdot-view button[aria-pressed="true"] { background: var(--text-primary); color: var(--surface-1); }
 @media (max-width: 1150px) { .strategy-cards { grid-template-columns: 1fr; } }
 @media (max-width: 700px) {
   .strategy-layout { grid-template-columns: 1fr; }
