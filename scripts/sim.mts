@@ -130,9 +130,9 @@ async function main() {
   if (cmd === "link" && a._[1]) {
     const tokenArg = a._[1];
     const hash = tokenArg.includes("#") ? new URLSearchParams(tokenArg.slice(tokenArg.indexOf("#") + 1)) : null;
-    const vdotView = tokenArg.startsWith("vd1.") || hash?.get("t") === "vdot" || (!hash?.get("t") && hash?.has("vd"));
+    const vdotView = /^vd\d+\./.test(tokenArg) || hash?.get("t") === "vdot" || (!hash?.get("t") && hash?.has("vd"));
     if (vdotView) {
-      const token = tokenArg.startsWith("vd1.") ? tokenArg : hash?.get("vd");
+      const token = /^vd\d+\./.test(tokenArg) ? tokenArg : hash?.get("vd");
       return out(a, { model: "vdot", params: token ? decodeVdot(token) : VDOT_DEFAULTS });
     }
     const strategyView = tokenArg.startsWith("1.") || hash?.get("t") === "strategies" || (!hash?.get("t") && hash?.has("ts"));

@@ -105,7 +105,7 @@ export async function buildParams(a: Args): Promise<{ params: Params; notes: str
   const link = flag(a, "link");
   if (typeof link === "string") {
     const hash = link.includes("#") ? new URLSearchParams(link.slice(link.indexOf("#") + 1)) : null;
-    if (link.startsWith("vd1.") || hash?.get("t") === "vdot" || (!hash?.get("t") && hash?.has("vd"))) {
+    if (/^vd\d+\./.test(link) || hash?.get("t") === "vdot" || (!hash?.get("t") && hash?.has("vd"))) {
       throw new Error("vDOT links need sim vdot; the legacy engine does not model vDOT/DOT");
     }
     if (link.startsWith("1.") || hash?.get("t") === "strategies" || (!hash?.get("t") && hash?.has("ts"))) {

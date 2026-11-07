@@ -15,7 +15,7 @@ npm run sim -- backtest [--deployment lark0]        # replay a deployment's hist
 npm run sim -- hollar                               # HOLLAR supply, facilitator buckets, HSM inventory (mainnet)
 npm run sim -- strategies --weight 0.25 --fee 0.69    # marginal two-strategy carry, pinned mainnet, Main still HOLLAR
 npm run sim -- strategies --params                   # independent strategy settings, ranges and defaults
-npm run sim -- vdot --fee 0.69 --set hf=1.15          # vDOT/DOT alternative; Main stays HOLLAR
+npm run sim -- vdot --fee 0.69 --set hf=1.01          # vDOT/DOT alternative; Main stays HOLLAR
 npm run sim -- link 'https://juicenomics.lark.hydration.cloud/#s=2z…'   # decode a share link
 ```
 
@@ -91,11 +91,12 @@ Options apply in this order, and all of them are optional: `--deployment`, then 
 
 ## vDOT / DOT alternative
 
-- `sim vdot` and the **vDOT / DOT** tab use a separate snapshot at mainnet #16706517 (6 Nov, 23:11 UTC). `--params` lists numerical fields; `--set useEMode=true|false` selects collateral mode. Links use `vd=vd1.…`; `sim link` decodes them, and legacy `cf`/`mc` reject them.
+- `sim vdot` and the **vDOT / DOT** tab use a separate snapshot at mainnet #16706517 (6 Nov, 23:11 UTC). `--params` lists numerical fields; `--set useEMode=true|false` selects collateral mode. New links use `vd=vd2.…`; vd1 retains HF 1.15 when omitted. `sim link` decodes both, and legacy `cf`/`mc` reject them.
 - Main still borrows HOLLAR. This is an alternative for new funding, not a three-way allocation or an active migration. Contracts and keepers are outside this preview's scope.
-- eMode permits 85% LTV with 92% LT: HF 1.05 is not borrowable. Default HF 1.15 gives 5×. Native growth defaults to the annualized 30-day DOT-per-vDOT feed change, 4.3746% APR; never use vDOT/USD growth as staking yield.
+- eMode permits 85% LTV with 92% LT: minimum borrowable HF is 1.08235294. Requested defaults are HF 1.01 and 69% fee. The 11.2222× target exceeds borrowing LTV and the candidate gross cap; preserve these flags. Native growth defaults to the annualized 30-day DOT-per-vDOT feed change, 4.3746% APR; never use vDOT/USD growth as staking yield.
 - DOT → aDOT → vDOT routes re-supply borrowed DOT. The model reflects this in reserve cash, supply and utilization. The resulting aDOT belongs to pool participants, not to this strategy; do not add its lending yield to the strategy's carry.
-- Carry assumes flat DOT/USD. Price-shock P&L is separate: at 75% Main LTV, a 30% DOT fall costs 22.5% of depositor TVL even when loop HF is unchanged. A relative vDOT discount affects HF.
+- Carry assumes flat DOT/USD. Price-shock P&L is separate: at 75% Main LTV, a 30% DOT fall costs 22.5% of depositor TVL even when loop HF is unchanged. The lending oracle multiplies Bifrost's ten-minute conversion-rate feed by the same DOT/USD source as debt. Market discounts do not affect oracle HF; `vdotMove` explicitly stresses the conversion-rate feed. Debt growth can also affect HF.
+- `scripts/check-vdot-oracle.mjs` verifies the adapter code hash, shared DOT/USD source and conversion-rate product at the pinned and finalized blocks on two RPCs. `src/data/vdot-oracle.json` records the evidence.
 - The pinned 75k HOLLAR seed quote costs 16.88% versus the oracle. Quotes are independent one-shot observations, not a sequential ramp simulation; costs are excluded from carry APR and must not be double-counted from the route fee.
 - `scripts/snapshot-vdot.mjs` captures chain evidence; `scripts/quote-vdot.mjs` uses sdk-next from `HYDRATION_UI_ROOT`. Write new evidence to a separate file and bump the link version before replacing frozen defaults/snapshots. See [docs/vdot-dot.md](docs/vdot-dot.md).
 - `SIM_URL=http://localhost:4173/ node scripts/smoke-vdot.mjs` checks sharing/export, eMode, fee comparisons, price shocks, existing-tab isolation and mobile layout.

@@ -4,7 +4,7 @@ export const VDOT_MARKET = market;
 export const VDOT_DEFAULTS = {
   tvl: 100_000,
   mainLtv: 0.75,
-  hf: 1.15,
+  hf: 1.01,
   useEMode: true,
   fee: 0.69,
   stakingApr: market.vdotGrowth.simpleAnnualizedApr,
@@ -17,9 +17,10 @@ export const VDOT_DEFAULTS = {
   dotMove: -0.3,
   vdotMove: 0,
 };
+export const VDOT_V1_DEFAULTS = { ...VDOT_DEFAULTS, hf: 1.15 };
 export type VdotParams = typeof VDOT_DEFAULTS;
 export type VdotNumericKey = Exclude<keyof VdotParams, "useEMode">;
-export const VDOT_FIELDS: { key: VdotNumericKey; label: string; unit: "$" | "%" | "×" | "DOT"; min: number; max: number; step: number; group: "Funding" | "Capacity assumptions" | "Price shock"; help: string }[] = [
+export const VDOT_FIELDS: { key: VdotNumericKey; label: string; unit: "$" | "%" | "×" | "DOT"; min: number; max: number; step: number; group: "Funding" | "Capacity assumptions" | "Price shock" | "Oracle stress"; help: string }[] = [
   { key: "tvl", label: "New depositor collateral", unit: "$", min: 1, max: 100_000_000, step: 1000, group: "Funding", help: "Additional TVL; Main borrows HOLLAR against the original vault collateral." },
   { key: "mainLtv", label: "Main HOLLAR LTV", unit: "%", min: 0, max: 0.8, step: 0.01, group: "Funding", help: "All of this new HOLLAR funding goes into the vDOT / DOT alternative. No existing capital is reallocated." },
   { key: "hf", label: "Loop target HF", unit: "×", min: 1.01, max: 3, step: 0.01, group: "Funding", help: "Both liquidation threshold and the maximum borrowing LTV matter. Targets below the minimum borrowable HF are flagged." },
@@ -32,16 +33,16 @@ export const VDOT_FIELDS: { key: VdotNumericKey; label: string; unit: "$" | "%" 
   { key: "dotCashFloor", label: "DOT reserve cash to retain", unit: "DOT", min: 0, max: 100_000_000, step: 100_000, group: "Capacity assumptions", help: "Remaining reserve cash after borrowing and swap-route re-supply. Entry still needs cash for each borrow tranche." },
   { key: "dotUtilizationMax", label: "DOT utilization ceiling", unit: "%", min: 0, max: 1, step: 0.01, group: "Capacity assumptions", help: "Defaults to the rate curve's 85% kink. Rates rise rapidly above it." },
   { key: "dotMove", label: "DOT / USD price move", unit: "%", min: -0.9, max: 2, step: 0.05, group: "Price shock", help: "Instantaneous move in both vDOT and DOT dollar prices. Original vault collateral stays fixed; this measures source exposure only." },
-  { key: "vdotMove", label: "Additional vDOT / DOT move", unit: "%", min: -0.5, max: 0.5, step: 0.01, group: "Price shock", help: "A relative price move on vDOT alone, as recognized by the lending oracle. A market-only discount can still impair exits before the oracle changes." },
+  { key: "vdotMove", label: "Oracle conversion-rate change", unit: "%", min: -0.5, max: 0.5, step: 0.01, group: "Oracle stress", help: "Stress the Bifrost DOT-per-vDOT conversion-rate feed itself. A market trading discount does not change this feed or loop HF; it affects execution value." },
 ];
 
-export function vdotParams(input: unknown): VdotParams {
+export function vdotParams(input: unknown, defaults: VdotParams = VDOT_DEFAULTS): VdotParams {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("vDOT settings must be an object");
   const values = input as Record<string, unknown>;
   for (const key of Object.keys(values)) {
     if (key !== "useEMode" && !VDOT_FIELDS.some((f) => f.key === key)) throw new Error(`unknown vDOT setting: ${key}`);
   }
-  const p = { ...VDOT_DEFAULTS, ...values };
+  const p = { ...defaults, ...values };
   if (typeof p.useEMode !== "boolean") throw new Error("useEMode must be true or false");
   for (const f of VDOT_FIELDS) {
     const value = p[f.key];
