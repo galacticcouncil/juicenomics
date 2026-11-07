@@ -7,7 +7,8 @@ TARGET=${1:-production}
 case "$TARGET" in
   production) SUFFIX=""; DEFAULT_TAB=overview ;;
   two-strategy) SUFFIX=-two-strategy; DEFAULT_TAB=strategies ;;
-  *) echo "usage: scripts/publish-lark.sh [production|two-strategy]" >&2; exit 1 ;;
+  vdot) SUFFIX=-vdot; DEFAULT_TAB=vdot ;;
+  *) echo "usage: scripts/publish-lark.sh [production|two-strategy|vdot]" >&2; exit 1 ;;
 esac
 REV=$(git rev-parse HEAD)
 TOKEN_FILE=${SWARMPIT_TOKEN_FILE:-$HOME/.lark_token}

@@ -33,7 +33,7 @@ export function vdotCommand(a: Args) {
     p = vdotParams({ ...p, [key]: key === "useEMode" ? value === "true" : Number(value) });
   }
   p = vdotParams(p);
-  const url = new URL("https://juicenomics-two-strategy.lark.hydration.cloud/");
+  const url = new URL("https://juicenomics-vdot.lark.hydration.cloud/");
   url.hash = new URLSearchParams({ t: "vdot", vd: encodeVdot(p) }).toString();
   return { link: url.toString(), params: p, result: evaluateVdot(p), scope: VDOT_SCOPE,
     snapshot: { block: VDOT_MARKET.block, hash: VDOT_MARKET.hash, timestamp: VDOT_MARKET.timestamp } };

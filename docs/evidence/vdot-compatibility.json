@@ -1,0 +1,55 @@
+{
+  "block": "16708292",
+  "hash": "0x196a4f08206a3b707462473de8fd34f91bf9014ccc2fe87a80e104b47b99fece",
+  "timestamp": "1794010368",
+  "rpc": "https://hdx.tarn.hydration.cloud",
+  "crossRpc": "https://rpc.hydradx.cloud",
+  "chainId": 222222,
+  "genesis": "0xafdc188f45c71dacbaa0b62e16a91f726c7b8699a9748cdf715459de6b7f366d",
+  "addresses": {
+    "source": "0x2df1d70f413b5edd16bb794791117948a7436a45",
+    "vault": "0x98db179d65b8abc53946bd89b3433a4fd3bfb60c",
+    "ledger": "0x4b1f2fc264986a7d792af4c4fc1c878cb98f1518",
+    "harvester": "0x91454e38b5ec11f3e9d6c23ca631e0f65388daf9"
+  },
+  "getters": {
+    "source": {
+      "hollar": "0x531a654d1696ed52e7275a8cede955e82620f99a",
+      "prime": "0x000000000000000000000000000000010000002b",
+      "primeAToken": "0x4c892a298a9c6b4ced988b3d6e9cf93333aadcf7",
+      "logic": "0xd5f73480bf41cce2b5eba7f21d967bd63595dff4",
+      "harvester": "0x91454e38b5ec11f3e9d6c23ca631e0f65388daf9"
+    },
+    "vault": {
+      "hollar": "0x531a654d1696ed52e7275a8cede955e82620f99a",
+      "hollarDebtToken": "0x342923782ccaebf9c38dd9cb40436e82c42c73b5",
+      "yieldSource": "0x2df1d70f413b5edd16bb794791117948a7436a45",
+      "mainDebt": "0x4b1f2fc264986a7d792af4c4fc1c878cb98f1518",
+      "collateral": "0x0000000000000000000000000000000100001068",
+      "compoundLogic": "0xda1c729f5988b3764abe74b41332b13df0f09e2f"
+    },
+    "ledger": {
+      "hollar": "0x531a654d1696ed52e7275a8cede955e82620f99a",
+      "debtToken": "0x342923782ccaebf9c38dd9cb40436e82c42c73b5",
+      "vault": "0x98db179d65b8abc53946bd89b3433a4fd3bfb60c"
+    },
+    "harvester": {
+      "prime": "0x000000000000000000000000000000010000002b",
+      "subLoop": "0x2df1d70f413b5edd16bb794791117948a7436a45"
+    }
+  },
+  "implementations": {
+    "source": "0x71673f4a9ead0ecc4c5373914fad43b348563148",
+    "vault": "0x713946f65e2537a1c35f852e1f85a68d5c0f93a9"
+  },
+  "runtimeHashes": {
+    "SubLoop": "0x999b30a8502a97288c66a2584a59127ce67d9c8d59a8ac176bf269b7e458e43d",
+    "SubLoopLogic": "0xa6930430eea9be70778ba966556366d0ff0311705583638fd52aa746178d2242",
+    "CollateralVault": "0xe82cf8b9dd2b0741880cda50cab8c9c68acc7adbdaeb2e05925c6c2ee4e0fb18",
+    "CompoundLogic": "0x57773ef76efb3fa079906484e7afaf09206ec658344297ef924f86ac49f17b99",
+    "MainDebt.ETH": "0x58a938509e36616d8bfe11f4dc7b872a373550ea7fbcf1f1bd17e712e6755265",
+    "Harvester": "0x3f1e5494e32c524133f7e08302339e7aa86256c2ed7bdcd6d65ef082f3a1fff8"
+  },
+  "crossRpcMatches": true,
+  "conclusion": "live Main is bound to HOLLAR; the source and harvester remain PRIME-specific. a vDOT/DOT source requires new contracts behind a compatible HOLLAR settlement interface. changing Main to DOT cannot be achieved by configuring the deployed ledger."
+}

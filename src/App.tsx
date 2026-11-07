@@ -45,7 +45,8 @@ export default function App() {
     if (TABS.some((t) => t.key === h.t)) return h.t as Tab;
     if (h.vd) return "vdot";
     if (h.ts) return "strategies";
-    return !location.hash && import.meta.env.VITE_DEFAULT_TAB === "strategies" ? "strategies" : "overview";
+    const defaultTab = import.meta.env.VITE_DEFAULT_TAB;
+    return !location.hash && (defaultTab === "strategies" || defaultTab === "vdot") ? defaultTab : "overview";
   });
   const [strategies, setStrategies] = useState<StrategyParams>({ ...STRATEGY_DEFAULTS });
   const [vdot, setVdot] = useState<VdotParams>({ ...VDOT_DEFAULTS });

@@ -17,6 +17,11 @@ const open = async (url, width = 1440, colorScheme = 'light') => {
   return page
 }
 try {
+  if (process.env.EXPECT_DEFAULT_TAB === 'vdot') {
+    const root = await open(origin)
+    check(await root.getByTestId('vdot-apr').innerText() === '1.45%', 'the separate subdomain opens the vDOT preview by default')
+    await root.close()
+  }
   const page = await open(`${origin}#t=vdot`)
   check(await page.getByTestId('vdot-apr').innerText() === '1.45%', 'default carry matches the independent calculation')
   check((await page.getByTestId('vdot-status').innerText()).includes('16.88%'), 'large HOLLAR entry cost is visible beside the headline')

@@ -23,6 +23,7 @@ export function Vdot({ p, onChange }: { p: VdotParams; onChange: (p: VdotParams)
       <h1>vDOT / DOT as the yield source</h1>
       <p>Main borrows HOLLAR → buy vDOT → supply vDOT → borrow DOT → buy more vDOT. Staking grows vDOT’s value in DOT; the loop pays DOT borrowing interest.</p>
       <p>This compares replacing the PRIME loop for <strong>new funding</strong>. The original vault collateral and HOLLAR Main debt stay the same. Existing capital is not actively reallocated.</p>
+      <p><strong>Two loans:</strong> the vault/Main leg owes HOLLAR; the vDOT strategy owes DOT. This requires a source upgrade and a vDOT strategy. Making Main itself borrow DOT would require a different debt ledger and settlement design; the deployed ledger is fixed to HOLLAR.</p>
     </div><div className="controls"><button onClick={() => onChange({ ...VDOT_DEFAULTS })}>reset vDOT assumptions</button><button onClick={exportResult}>export vDOT results</button></div></div>
     <div className="banner" role="status" data-testid="vdot-status">
       <strong>{r.capacityExceeded ? "Requested target fails market or capacity checks." : "Market checks pass at the pinned snapshot; execution still needs validation."}</strong>{" "}

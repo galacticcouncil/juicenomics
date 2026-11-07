@@ -4,6 +4,25 @@ this preview replaces the PRIME/HOLLAR source with a vDOT-collateral / DOT-debt 
 
 the flow is HOLLAR → vDOT, supply vDOT, borrow DOT, swap to more vDOT and supply again. an eventual unwind would repay DOT and return HOLLAR to the source. this would require its own Aave account, a vDOT-capable harvester, truthful USD backing and explicit treatment of DOT equity exposure; the preview does not claim that those contract paths exist.
 
+the dedicated deployment is [juicenomics-vdot.lark.hydration.cloud](https://juicenomics-vdot.lark.hydration.cloud/). it opens this model by default and uses its own stack, router and `-vdot` image tag. `scripts/publish-lark.sh vdot` targets it; production and the two-strategy preview have separate targets.
+
+## compatibility with deployed contracts
+
+the two borrowing layers are distinct:
+
+| layer | current live strategy | this preview |
+| --- | --- | --- |
+| vault / Main | HOLLAR debt | HOLLAR debt |
+| yield-source loop | PRIME collateral / HOLLAR debt | vDOT collateral / DOT debt |
+
+the vDOT supplied inside the strategy would borrow DOT. the original deposit does not change Main's debt currency. this is not a configuration supported by the currently deployed source: SubLoop and its logic are PRIME/HOLLAR-specific, including 6/18-decimal conversions, and the current harvester accepts PRIME.
+
+a compatible source upgrade can be designed around the existing vault and Main ledger only if it preserves the HOLLAR-in/HOLLAR-out settlement boundary, USD8 equity, source shares, pending exits, ownership and continuous execution-cost counters. it needs a vDOT/DOT strategy, a suitable harvest path, keeper support and an exact upgrade rehearsal. this preview provides none of those contract implementations or compatibility proofs.
+
+making **Main itself borrow DOT** is a different design. deployed `JuicerMainDebt.hollar` and `debtToken` are immutable; `CollateralVault.setMainDebt` rejects replacing a ledger once one is attached. Main borrowing also uses USD8-to-HOLLAR18 conversions. DOT has 10 decimals and a floating USD price, so renaming the token or changing a route cannot make those semantics correct. that path requires a denomination-aware Main ledger and reviewed vault, repayment, fee/discount and settlement integration, with a new deployment or explicit migration design. the carry and price-shock figures here do not model it.
+
+[live binding and code-hash evidence](evidence/vdot-compatibility.json) compares the deployed source, vault, Main ledger, helper and harvester with the launch manifest on two independent RPCs. reproduce with `node scripts/check-vdot-compatibility.mjs /path/to/mainnet/manifest.json /tmp/vdot-compatibility.json`.
+
 ## evidence
 
 `src/data/vdot-market.json` pins mainnet block **16706517**, **6 november 2026, 23:11:00 UTC**, hash `0x95fc79bfdb3d780b1839ece009bd62cb9e89d12d11f2afe99de715f9a3334683`. both reserve supplies and variable debts agree on two independent RPCs with zero residuals. registry decimals, reserve configuration, rate curves, oracle sources and pool 690 balances are read from chain.

@@ -3,11 +3,11 @@ import { setTimeout } from 'node:timers/promises'
 import { homedir } from 'node:os'
 
 const target = process.env.DEPLOY_TARGET ?? 'production'
-if (!['production', 'two-strategy'].includes(target)) throw new Error('unknown deployment target')
-const preview = target === 'two-strategy'
-const name = preview ? 'juicenomics-two-strategy' : 'juicenomics'
+if (!['production', 'two-strategy', 'vdot'].includes(target)) throw new Error('unknown deployment target')
+const preview = target !== 'production'
+const name = preview ? `juicenomics-${target}` : 'juicenomics'
 const site = `https://${name}.lark.hydration.cloud`
-const tagSuffix = preview ? '-two-strategy' : ''
+const tagSuffix = preview ? `-${target}` : ''
 const image = process.env.DEPLOY_IMAGE
 const revision = process.env.DEPLOY_REVISION
 if (!/^[a-f0-9]{40}$/.test(revision ?? '') ||
@@ -15,7 +15,7 @@ if (!/^[a-f0-9]{40}$/.test(revision ?? '') ||
   throw new Error('DEPLOY_IMAGE must match DEPLOY_REVISION and DEPLOY_TARGET')
 }
 
-const compose = (await readFile(new URL(`../docker/stack.${preview ? 'two-strategy' : 'lark'}.yml`, import.meta.url), 'utf8'))
+const compose = (await readFile(new URL(`../docker/stack.${preview ? target : 'lark'}.yml`, import.meta.url), 'utf8'))
   .replace(/^(    image: ).+$/m, `$1${image}`)
 if (process.env.DEPLOY_DRY_RUN === '1') {
   console.log(JSON.stringify({ name, site, compose, revision, image }))
