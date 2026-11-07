@@ -6,6 +6,7 @@ export interface Deployment {
   key: DeploymentKey;
   label: string;
   rpc: string;
+  genesis?: Hex;
   subLoop: Hex;
   aavePool: Hex;
   oracle: Hex;
@@ -47,6 +48,18 @@ export const DEPLOYMENTS: Deployment[] = [
     feeController: "0x5b153c8e24ca62436ef836a1f179dd8ade2d5acd",
     discount: "0x5f8d1d70c658fd0ffd79d3eaa692fc78306f39db",
     vaults: { eth: { address: "0xa64e418978482d5de91717cf6c77e1f40105f2ab", asset: 4200 } },
+    assets: { eth: 4200, btc: 1000765 },
+  },
+  {
+    key: "mainnet",
+    label: DEPLOYMENT.mainnet.label,
+    rpc: "https://hdx.tarn.hydration.cloud",
+    genesis: "0xafdc188f45c71dacbaa0b62e16a91f726c7b8699a9748cdf715459de6b7f366d",
+    subLoop: "0x2df1d70f413b5edd16bb794791117948a7436a45",
+    ...MARKET,
+    feeController: "0x9e9e273Df28b4f54a4B7227517fE56D7FFa24843",
+    discount: "0x6a00bd956908bcCDbaC3523f862740AE9dE38550",
+    vaults: { eth: { address: "0x98db179d65b8abc53946bd89b3433a4fd3bfb60c", asset: 4200 } },
     assets: { eth: 4200, btc: 1000765 },
   },
 ];
@@ -114,11 +127,25 @@ export interface LiveState {
 
 /** read the running chain at its head (or at an archived block) and build the settings that describe it */
 export async function loadLive(dep: Deployment, url = dep.rpc, at?: number): Promise<LiveState> {
-  const tag = at === undefined ? "latest" : `0x${at.toString(16)}`;
+  let tag = at === undefined ? "latest" : `0x${at.toString(16)}`;
+  let pinnedHash: string | undefined;
+  if (dep.genesis) {
+    const genesis = await rpc(url, { jsonrpc: "2.0", id: 1, method: "chain_getBlockHash", params: [0] }) as { result?: string };
+    if (genesis.result !== dep.genesis) throw new Error(`RPC is not ${DEPLOYMENT[dep.key].name}`);
+    if (at === undefined) {
+      const finalized = await rpc(url, { jsonrpc: "2.0", id: 1, method: "chain_getFinalizedHead", params: [] }) as { result?: string };
+      if (!finalized.result) throw new Error("Finalized head unavailable");
+      pinnedHash = finalized.result;
+      const header = await rpc(url, { jsonrpc: "2.0", id: 1, method: "chain_getHeader", params: [finalized.result] }) as { result?: { number: string } };
+      if (!header.result?.number) throw new Error("Finalized header unavailable");
+      tag = header.result.number;
+    }
+  }
   const head = (await rpc(url, { jsonrpc: "2.0", id: 1, method: "eth_getBlockByNumber", params: [tag, false] })) as { result: { number: Hex; timestamp: Hex } };
   const blockHex = head.result.number;
   const block = Number(blockHex);
   const timestamp = Number(head.result.timestamp);
+  if (dep.genesis && at === undefined && Date.now() / 1000 - timestamp > 180) throw new Error("Mainnet finalized state is more than three minutes old");
   const keys: VaultKey[] = ["eth", "btc"];
   const S = dep.subLoop;
   const named: [string, Call][] = [
@@ -159,6 +186,13 @@ export async function loadLive(dep: Deployment, url = dep.rpc, at?: number): Pro
   named.push(["controller", { to: S, sig: "function executionController() view returns (address)", optional: true }]);
   const out = await ethCalls(url, named.map(([, c]) => c), blockHex);
   const r = new Map(named.map(([name], i) => [name, out[i]]));
+  let hollarHeadroom: number | undefined;
+  if (dep.key === "mainnet") {
+    const reserve = r.get("hollarReserve") as readonly unknown[];
+    const [bucket] = await ethCalls(url, [{ to: dep.hollar, sig: "function getFacilitatorBucket(address) view returns (uint256,uint256)", args: [reserve[8]] }], blockHex);
+    const [capacity, level] = bucket as readonly bigint[];
+    hollarHeadroom = exact(capacity > level ? capacity - level : 0n, 18);
+  }
   const deployed = keys.filter((k) => dep.vaults[k]);
   const ledgers = deployed.map((k) => r.get(`${k}.ledger`) as Hex);
   // the entry lane (HOLLAR → aPRIME): price cap, then its budget and pacing
@@ -184,7 +218,8 @@ export async function loadLive(dep: Deployment, url = dep.rpc, at?: number): Pro
     { to: controller, sig: "function pacing(bytes32) view returns (uint64,uint64,uint256)", args: [group], optional: true },
   ], blockHex) as [[Hex, bigint, bigint] | undefined, [bigint] | undefined] : [undefined, undefined];
   // pool storage at the same block as the eth_calls (frontier blocks map 1:1 to substrate blocks); a batch may answer in any order
-  const hashRes = ((await rpc(url, { jsonrpc: "2.0", id: 1, method: "chain_getBlockHash", params: [block] }).catch(() => null)) as { result?: unknown } | null)?.result;
+  const hashRes = pinnedHash ?? ((await rpc(url, { jsonrpc: "2.0", id: 1, method: "chain_getBlockHash", params: [block] }).catch(() => null)) as { result?: unknown } | null)?.result;
+  if (dep.genesis && typeof hashRes !== "string") throw new Error("Mainnet block hash unavailable");
   const at_ = typeof hashRes === "string" ? [hashRes] : [];
   const storage = new Map(((await rpc(url, [
     { jsonrpc: "2.0", id: 1, method: "state_getStorage", params: [POOL143_INFO_KEY, ...at_] },
@@ -286,6 +321,7 @@ export async function loadLive(dep: Deployment, url = dep.rpc, at?: number): Pro
     };
     set("PRIME price", p.market.primePrice, live.primePrice, (v) => { p.market.primePrice = v; });
     set("HOLLAR rate", p.market.hollarRate, live.hollarRate, (v) => { p.market.hollarRate = v; });
+    set("HOLLAR mint headroom", p.market.hollarHeadroomUsd, hollarHeadroom, (v) => { p.market.hollarHeadroomUsd = v; });
     if (primeYield != null) set("PRIME yield (7 d)", p.market.primeYield, primeYield, (v) => { p.market.primeYield = v; });
     set("target HF", p.loop.targetHf, live.targetHf, (v) => { p.loop.targetHf = v; });
     if (atTarget) set("HF lag", p.loop.hfLag, live.hf - live.targetHf, (v) => { p.loop.hfLag = v; });

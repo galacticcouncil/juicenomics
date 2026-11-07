@@ -1,7 +1,7 @@
-// refresh src/data/<deployment>.json from a live Lark chain (read-only): node scripts/snapshot-lark.mjs <lark4|lark0> [--block n] [--out file]
+// refresh src/data/<deployment>.json: node scripts/snapshot-lark.mjs <mainnet|lark4|lark0> [--block n] [--out file]
 import { writeFileSync } from "node:fs";
 import { createPublicClient, encodeAbiParameters, formatUnits, http, keccak256, parseAbi } from "viem";
-import { ApiPromise, WsProvider } from "@polkadot/api";
+import { ApiPromise, HttpProvider, WsProvider } from "@polkadot/api";
 import { blake2AsHex } from "@polkadot/util-crypto";
 
 const POOL = "0x1b02E051683b5cfaC5929C25E84adb26ECf87B38";
@@ -9,6 +9,16 @@ const ORACLE = "0xAD33C0F0C42C5A0EAA65b5895D2BdB20cb6E8760";
 const HOLLAR = "0x531a654d1696ED52e7275A8cede955E82620f99a";
 const BAND = { relever: 6500, target: 7500, delever: 8300 };
 const DEPLOYMENTS = {
+  mainnet: {
+    rpc: "https://hdx.tarn.hydration.cloud",
+    genesis: "0xafdc188f45c71dacbaa0b62e16a91f726c7b8699a9748cdf715459de6b7f366d",
+    source: "Hydration mainnet",
+    subLoop: "0x2df1d70f413b5edd16bb794791117948a7436a45",
+    fees: "0x9e9e273Df28b4f54a4B7227517fE56D7FFa24843",
+    discount: "0x6a00bd956908bcCDbaC3523f862740AE9dE38550",
+    vaults: [{ key: "eth", name: "jETH", collateral: "GIGAETH", assetId: 4200, address: "0x98db179d65b8abc53946bd89b3433a4fd3bfb60c" }],
+    standIn: { key: "btc", name: "jBTC", collateral: "tBTC", assetId: 1000765, units: 0, tvlCap: 0, band: BAND },
+  },
   lark4: {
     node: "node4",
     genesis: "0x6b320d1e88d14f43170286b3b4b4ed2dedc33e35b21bc6246388fae46f8ea564",
@@ -41,17 +51,18 @@ const opt = (name) => {
   const i = args.indexOf(`--${name}`);
   return i > 0 ? args[i + 1] : undefined;
 };
-const RPC = process.env.LARK_RPC ?? `https://${dep.node}.lark.hydration.cloud`;
+const RPC = process.env.LARK_RPC ?? dep.rpc ?? `https://${dep.node}.lark.hydration.cloud`;
 const WS = process.env.LARK_WS ?? `wss://${dep.node}.lark.hydration.cloud`;
 const SUBLOOP = dep.subLoop;
 const token = (id) => `0x${(0x100000000n + BigInt(id)).toString(16).padStart(40, "0")}`;
 
-const api = await ApiPromise.create({ provider: new WsProvider(WS), noInitWarn: true });
+const api = await ApiPromise.create({ provider: dep.rpc ? new HttpProvider(RPC) : new WsProvider(WS), noInitWarn: true });
 const genesis = (await api.rpc.chain.getBlockHash(0)).toHex();
 if (genesis !== dep.genesis) throw new Error(`unexpected genesis ${genesis}: not ${dep.source}`);
 
 const pub = createPublicClient({ transport: http(RPC, { timeout: 60_000, retryCount: 3 }) });
-const block = await pub.getBlock(opt("block") ? { blockNumber: BigInt(opt("block")) } : {});
+const finalized = key === "mainnet" ? await api.rpc.chain.getHeader(await api.rpc.chain.getFinalizedHead()) : null;
+const block = await pub.getBlock(opt("block") ? { blockNumber: BigInt(opt("block")) } : finalized ? { blockNumber: BigInt(finalized.number.toString()) } : {});
 const at = { blockNumber: block.number };
 const read = (address, sig, args = []) => {
   const abi = parseAbi([sig]);
@@ -163,6 +174,7 @@ const pool143 = {
 };
 await api.disconnect();
 
+const [bucketCapacity, bucketLevel] = await read(HOLLAR, "function getFacilitatorBucket(address) view returns (uint256,uint256)", [hollarRes[8]]);
 const snapshot = {
   source: dep.source,
   genesis: dep.genesis,
@@ -170,7 +182,7 @@ const snapshot = {
   substrateBlock: Number(block.number),
   timestamp: Number(block.timestamp),
   prime: { price: primePrice, ...primeCfg, supplyApr: u(primeRes[2], 27) },
-  hollar: { borrowApr: u(hollarRes[4], 27) },
+  hollar: { borrowApr: u(hollarRes[4], 27), headroom: u(bucketCapacity > bucketLevel ? bucketCapacity - bucketLevel : 0n, 18) },
   discount: {
     mainBps: Number(await read(dep.discount, "function discountBps() view returns (uint16)")),
     loopBps: Number(await read(dep.discount, "function loopDiscountBps() view returns (uint16)")),

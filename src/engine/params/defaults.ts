@@ -1,5 +1,6 @@
 import lark0 from "../../data/lark0.json";
 import lark4 from "../../data/lark4.json";
+import mainnet from "../../data/mainnet.json";
 import type { DeploymentKey, Params, VaultKey, VaultParams } from "./types";
 
 interface SnapshotVault {
@@ -16,6 +17,7 @@ interface SnapshotVault {
   loopPrincipal: number;
   loopEquityUsd: number;
   protocolFeeBps: number;
+  protocolReserve?: number;
   band: { targetGap: number; relever: number; delever: number };
   exitHeadroom: { enabled: boolean; gapBps: number };
 }
@@ -27,7 +29,7 @@ export interface Snapshot {
   evmBlock: number;
   timestamp: number;
   prime: { price: number; lt: number };
-  hollar: { borrowApr: number };
+  hollar: { borrowApr: number; headroom?: number };
   discount: { mainBps: number; loopBps: number; loopCap: number };
   loop: { collateralUsd: number; debtUsd: number; targetHf: number; harvestThreshold: number; deployTranche: number; dcaSlippagePpm: number; admissionMaxDeficitBps: number };
   vaults: Record<VaultKey, SnapshotVault>;
@@ -87,7 +89,7 @@ function fromSnapshot(deployment: DeploymentKey, s: Snapshot): Params {
       jumps: false,
       monitorMinutes: 15,
       // mainnet facilitator bucket 13M, level 10.87M at EVM block 16,035,040 (21 Oct)
-      hollarHeadroomUsd: 2_131_869,
+      hollarHeadroomUsd: s.hollar.headroom ?? 2_131_869,
     },
     loop: {
       mode: "hf",
@@ -155,21 +157,22 @@ function fromSnapshot(deployment: DeploymentKey, s: Snapshot): Params {
       headroomOn: live.exitHeadroom.enabled,
       headroomGapBps: live.exitHeadroom.gapBps,
       // what each Main ledger was funded with; a live load reads what is left
-      reserveUsd: 1000,
+      reserveUsd: live.protocolReserve ?? 1000,
     },
     flows: { growth: "none", growthFactor: 1, sizeMedianUsd: 5_000, sizeSigma: 1.2 },
-    sim: { horizonDays: 365, stepHours: 1, paths: 200, seed: 7, poolMode: "fast", initial: "fresh", stateBlock: s.evmBlock },
+    sim: { horizonDays: 365, stepHours: 1, paths: 200, seed: 7, poolMode: "fast", initial: deployment === "mainnet" ? "lark4" : "fresh", stateBlock: s.evmBlock },
   };
 }
 
 /** Lark 4 runs jBTC alone, Lark 0 jETH alone; the other vault is an opt-in stand-in */
 export const LARK4: Params = Object.freeze(fromSnapshot("lark4", lark4)) as Params;
 export const LARK0: Params = Object.freeze(fromSnapshot("lark0", lark0)) as Params;
-export const BASELINES: Record<DeploymentKey, Params> = { lark4: LARK4, lark0: LARK0 };
-export const SNAPSHOTS: Record<DeploymentKey, Snapshot> = { lark4, lark0 };
+export const MAINNET: Params = Object.freeze(fromSnapshot("mainnet", mainnet)) as Params;
+export const BASELINES: Record<DeploymentKey, Params> = { mainnet: MAINNET, lark4: LARK4, lark0: LARK0 };
+export const SNAPSHOTS: Record<DeploymentKey, Snapshot> = { mainnet, lark4, lark0 };
 export const DEPLOYMENT_KEYS = Object.keys(BASELINES) as DeploymentKey[];
 
-const NAMES: Record<DeploymentKey, string> = { lark4: "Lark 4", lark0: "Lark 0" };
+const NAMES: Record<DeploymentKey, string> = { mainnet: "Mainnet", lark4: "Lark 4", lark0: "Lark 0" };
 export const DEPLOYMENT = Object.fromEntries(DEPLOYMENT_KEYS.map((k) => {
   const runs = (["eth", "btc"] as VaultKey[]).map((x) => SNAPSHOTS[k].vaults[x]).filter((x) => x.deployed);
   return [k, { name: NAMES[k], label: `${NAMES[k]} · ${runs.map((x) => `${x.name} on ${x.collateral}`).join(", ")}` }];

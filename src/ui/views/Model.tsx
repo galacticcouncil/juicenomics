@@ -4,10 +4,12 @@ import type { DeploymentKey, Params } from "../../engine/params/types";
 import { fmtPct, fmtX } from "../fmt";
 
 const RUNS: Record<DeploymentKey, string> = {
+  mainnet: "jETH on GIGAETH, with a 7-day withdrawal delay",
   lark4: "jBTC alone, money-market #89 contracts",
   lark0: "jETH alone on GIGAETH, launched 2–3 Nov through the mainnet launch path, with a 60 s withdrawal delay",
 };
 const STAND_IN: Record<DeploymentKey, string> = {
+  mainnet: "jBTC is off: mainnet runs jETH only. Enabling jBTC models a hypothetical vault; it has no deployed position.",
   lark4: "jETH is off: Lark 4 runs no jETH vault. Switched on, it's a GIGAETH vault sized like the 16 Oct Lark 4's, with the same band and fees and no debt yet.",
   lark0: "jBTC is off: Lark 0 runs no jBTC vault. Switched on, it's a tBTC vault sized like Lark 4's 30 Oct jBTC, with the same band and fees and no debt yet.",
 };
@@ -46,7 +48,7 @@ deficit    365 · c · L / s, before fees        = ${Number.isFinite(r.breakEven
           <li>Pooled cost attribution (today) spreads newcomers' entry costs and leavers' unwind costs over everyone. "Own" charges them to whoever causes them.</li>
           <li>Newcomers mint vault shares at the collateral's value (pooled, as on chain), so they also take a slice of whatever surplus or hole the loop holds when they enter. The closed form leaves a vault's share of the loop with its incumbents.</li>
           <li>Growth: each vault's TVL is grown over the horizon at today's prices, with inflows, growth, withdrawals and the cap. An incumbent pays newcomers' pooled entries in proportion to the TVL at the time, i.e. the time average of inflow / TVL (ln g a year for g× exponential growth, not g − 1); dollar figures use the average TVL. The Monte Carlo grows TVL in dollars, so falling prices slow it.</li>
-          <li>Start: the simulation starts fresh by default, so the whole ramp (≈ c · L · ℓ of TVL) is paid inside the horizon. The Overview's "from a fresh start" figure is the one comparable with the Simulation tab; "current state" starts from the chain's positions, whose ramp was already paid.</li>
+          <li>Start: a new visit loads mainnet's current positions. Shared scenarios keep their saved starting state. A fresh start pays the whole ramp (≈ c · L · ℓ of TVL) inside the horizon; current state carries forward the chain's supplied collateral, debt and waiting cash.</li>
           <li>Protocol revenue counts HOLLAR interest, which has no suppliers, so all of it goes to the protocol. It also counts the collateral fee, pool 143 fees (the treasury holds ~100% of the pool), deposit fees and the desk spread, less incentives.</li>
         </ul>
       </div>

@@ -21,7 +21,8 @@ async function open(url, scheme = "light") {
 
 const { page, errors } = await open(ORIGIN);
 const tiles = await page.$$eval(".tile", (els) => els.map((e) => e.innerText.replace(/\s+/g, " ")));
-check(tiles.length >= 8 && tiles.some((t) => /jBTC net APR −?\d/i.test(t)), `overview tiles render (${tiles.length})`);
+check(tiles.length >= 8 && tiles.some((t) => /jETH net APR −?\d/i.test(t)), `overview tiles render (${tiles.length})`);
+check((await page.locator('select[aria-label="deployment"]').inputValue()) === "mainnet" && /state @ [\d,]+ \(live\)/.test(await page.locator("header").innerText()), "mainnet live state loads automatically");
 await page.screenshot({ path: `${OUT}overview-light.png`, fullPage: true });
 
 // load a preset, let the url settle, reopen the link in a fresh page
@@ -48,9 +49,9 @@ await sim.page.selectOption(".row:has-text('Pool math') select", "exact");
 await sim.page.click('nav.tabs button:has-text("Simulation")');
 const wasmResponse = sim.page.waitForResponse((r) => r.url().endsWith(".wasm"), { timeout: 60000 }).catch(() => null);
 await sim.page.click('button:has-text("run 20 paths")');
-await sim.page.waitForSelector('.tile:has-text("jBTC APR")', { timeout: 180000 });
+await sim.page.waitForSelector('.tile:has-text("jETH APR")', { timeout: 180000 });
 const simTiles = await sim.page.$$eval(".tile", (els) => els.map((e) => e.innerText.replace(/\s+/g, " ")));
-check(simTiles.some((t) => /jBTC APR \(in tBTC\) −?\d/i.test(t)), `monte carlo finishes (${simTiles.length} tiles)`);
+check(simTiles.some((t) => /jETH APR \(in GIGAETH\) −?\d/i.test(t)), `monte carlo finishes (${simTiles.length} tiles)`);
 const w = await wasmResponse;
 check(!!w && /application\/wasm/.test(w.headers()["content-type"] ?? ""), `wasm served as application/wasm (${w ? w.headers()["content-type"] : "not loaded"})`);
 await sim.page.screenshot({ path: `${OUT}simulation-run.png`, fullPage: true });
@@ -87,7 +88,7 @@ check(opt.errors.length === 0 && (await opt.page.locator("h3:has-text('Best foun
   check(!!s && /^\d+[zj]/.test(s), `scenario A is written as a versioned token in a comparison (${s})`);
   await page.close();
 }
-// live state straight from lark 4 (the rpc has to allow cross-origin reads)
+// refresh mainnet state after the automatic initial load
 const live = await open(ORIGIN);
 await live.page.click('button:has-text("load live state")');
 await live.page.click(".popover button.primary");

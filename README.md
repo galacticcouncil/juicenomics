@@ -2,6 +2,8 @@
 
 Formerly juicer-sim; `https://juicer-sim.lark.hydration.cloud` links redirect here.
 
+The web app opens on Hydration mainnet and automatically loads finalized Juicer state from `https://hdx.tarn.hydration.cloud`. It starts from the running jETH position, contract settings, pool balances and HOLLAR mint headroom. Explicit share links retain their saved deployment and values; old links remain Lark 4 scenarios. If live loading fails, a banner identifies the saved mainnet snapshot and offers a retry through **load live state**.
+
 Economics dashboard for Juicer, Hydration's leveraged PRIME loop vaults: jBTC on tBTC and jETH on GIGAETH.
 
 - **What it covers:** every protocol, market and improvement setting has a control. The header picks the deployment a scenario models; presets, resets, share links and live state follow it.
@@ -27,7 +29,7 @@ npm ci
 npm run dev            # local app
 npm test               # closed form vs the study, pool parity with the wasm, monte carlo checks, share links
 npm run build
-node scripts/snapshot-lark.mjs lark4   # refresh a deployment's settings, lark4 or lark0 (read-only chain reads)
+node scripts/snapshot-lark.mjs mainnet # refresh a deployment's saved settings: mainnet, lark4 or lark0 (read-only chain reads)
 SIM_URL=http://localhost:4173/ node scripts/smoke.mjs   # headless check of a running build
 ```
 

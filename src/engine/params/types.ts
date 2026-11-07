@@ -1,5 +1,5 @@
 export type VaultKey = "eth" | "btc";
-export type DeploymentKey = "lark4" | "lark0";
+export type DeploymentKey = "mainnet" | "lark4" | "lark0";
 
 export interface VaultParams {
   on: boolean;

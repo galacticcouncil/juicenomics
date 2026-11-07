@@ -34,7 +34,7 @@ commands
   hollar [--evm url] [--ws url]        HOLLAR supply, facilitator buckets and HSM inventory on mainnet
 
 config (applied in this order, all optional)
-  --deployment lark4|lark0   whose settings and chain state to start from, and what --live and backtest read (default lark4)
+  --deployment mainnet|lark4|lark0   whose settings and chain state to start from, and what --live and backtest read (CLI default lark4)
   --preset key | --link <share url or token> | --config file.json (nested params or {"path": value})
   --live [--block n]    start from the chain's state      --tvl usd   scale the vaults that are on to a total TVL
   --set path=value      any parameter, repeatable (see: params)

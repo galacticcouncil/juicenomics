@@ -2,6 +2,8 @@
 
 Run the simulator headlessly with `npm run sim -- <command>`. Every command prints one JSON document on stdout. Errors go to stderr with a non-zero exit. `npm run sim -- help` lists everything.
 
+The web app defaults to finalized mainnet state loaded automatically from `https://hdx.tarn.hydration.cloud`; explicit shared scenarios keep their saved state. CLI commands keep the Lark 4 default for compatibility: use `--deployment mainnet --live` for mainnet. Mainnet runs jETH only; failed live loads display the dated saved snapshot rather than claiming fresh state.
+
 ```sh
 npm ci
 npm run sim -- deployments                         # the chains a config can model: lark4 (default), lark0

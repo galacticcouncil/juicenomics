@@ -143,7 +143,7 @@ h3 { font-size: 13px; margin: 14px 0 6px; color: var(--text-secondary); text-tra
 .flag.warning .ic { color: var(--warning); }
 .flag.good .ic { color: var(--good); }
 
-.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(440px, 1fr)); gap: 14px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(440px, 100%), 1fr)); gap: 14px; }
 .card { border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px 12px; background: var(--surface-1); min-width: 0; }
 .card h2 { margin-top: 2px; }
 table.grid { border-collapse: collapse; width: 100%; }
@@ -162,7 +162,7 @@ svg .val { fill: var(--text-primary); font-variant-numeric: tabular-nums; }
 .progress { height: 4px; background: var(--surface-2); border-radius: 2px; overflow: hidden; width: 160px; }
 .progress > div { height: 100%; background: var(--series-1); }
 .eq { font-family: ui-monospace, monospace; font-size: 12px; background: var(--surface-2); padding: 8px 10px; border-radius: 6px; white-space: pre-wrap; }
-@media (max-width: 900px) { .app { grid-template-columns: 1fr; } .panel { position: static; height: auto; } }
+@media (max-width: 900px) { .app { grid-template-columns: minmax(0, 1fr); } .panel { position: static; height: auto; } .card { overflow-x: auto; } }
 .svgwrap { position: relative; }
 .svgtip { position: absolute; pointer-events: none; background: var(--text-primary); color: var(--surface-1); padding: 4px 8px; border-radius: 4px; font-size: 11px; white-space: nowrap; z-index: 3; }
 .chart { width: 100%; }
