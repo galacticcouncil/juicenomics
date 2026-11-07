@@ -4,6 +4,8 @@ Formerly juicer-sim; `https://juicer-sim.lark.hydration.cloud` links redirect he
 
 The web app opens on Hydration mainnet and automatically loads finalized Juicer state from `https://hdx.tarn.hydration.cloud`. It starts from the running jETH position, contract settings, pool balances and HOLLAR mint headroom. Explicit share links retain their saved deployment and values; old links remain Lark 4 scenarios. If live loading fails, a banner identifies the saved mainnet snapshot and offers a retry through **load live state**.
 
+The [Juicer dashboard](https://juicer.lark.hydration.cloud/) can transfer its finalized position, buffered HF target and selected 1h, 4h or 24h settled-entry rate. **Limit entry throughput** enables the editable **Entry rate · HOLLAR/h** parameter (`loop.entryRateOn`, `loop.entryRatePerHour`). It caps Monte Carlo entries alongside existing price, budget and pacing checks; zero stops entries without limiting exits or safety repayments. The closed form remains a steady-state model. Shared scenarios retain the imported block and rate.
+
 Economics dashboard for Juicer, Hydration's leveraged PRIME loop vaults: jBTC on tBTC and jETH on GIGAETH.
 
 - **What it covers:** every protocol, market and improvement setting has a control. The header picks the deployment a scenario models; presets, resets, share links and live state follow it.

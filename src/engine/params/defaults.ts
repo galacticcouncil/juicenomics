@@ -102,6 +102,8 @@ function fromSnapshot(deployment: DeploymentKey, s: Snapshot): Params {
       laneCapBps: lane.laneCapBps,
       budgetCap: lane.budgetCap,
       budgetRefillPerSec: lane.refillPerSec,
+      entryRateOn: false,
+      entryRatePerHour: 36_000,
       paceSec: lane.paceSec,
       collateralUsd: s.loop.collateralUsd,
       debtUsd: s.loop.debtUsd,

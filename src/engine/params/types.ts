@@ -55,6 +55,8 @@ export interface Params {
     laneCapBps: number;
     budgetCap: number;
     budgetRefillPerSec: number;
+    entryRateOn: boolean;
+    entryRatePerHour: number;
     paceSec: number;
     collateralUsd: number;
     debtUsd: number;

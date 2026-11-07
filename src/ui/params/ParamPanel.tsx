@@ -8,6 +8,7 @@ import { fmtNum, fromDisplay, toDisplay, unitLabel } from "../fmt";
 // the chain's positions only matter when the simulation starts from them
 const fromState = (p: Params) => p.sim.initial === "lark4";
 const VISIBLE: Record<string, (p: Params) => boolean> = {
+  "loop.entryRatePerHour": (p) => p.loop.entryRateOn,
   "loop.targetHf": (p) => p.loop.mode === "hf",
   "loop.collateralUsd": fromState,
   "loop.debtUsd": fromState,

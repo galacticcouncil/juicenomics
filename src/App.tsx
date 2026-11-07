@@ -7,6 +7,7 @@ import { setPath } from "./engine/params/schema";
 import type { Params } from "./engine/params/types";
 import { validate } from "./engine/params/validate";
 import { VERSION, decode, encode, eraDefaults } from "./engine/share/codec";
+import { applyDashboardRate, dashboardHandoff } from "./engine/share/dashboard";
 import { ParamPanel } from "./ui/params/ParamPanel";
 import { Overview } from "./ui/views/Overview";
 import { Compare } from "./ui/views/Compare";
@@ -46,6 +47,24 @@ export default function App() {
     const revision = edits.current;
     (async () => {
       const h = readHash();
+      if (Object.hasOwn(h, "juicer")) {
+        setBanner("loading dashboard state and entry rate…");
+        try {
+          const handoff = dashboardHandoff(h)!;
+          const dep = DEPLOYMENTS.find((d) => d.key === "mainnet")!;
+          const state = await loadLive(dep, dep.rpc, handoff.block);
+          if (state.timestamp !== handoff.observedAt) throw new Error("dashboard timestamp does not match the block");
+          const params = applyDashboardRate(state.apply(clone(MAINNET)), handoff);
+          if (active && edits.current === revision) {
+            setA(params);
+            setBanner(`dashboard state at block ${state.block.toLocaleString("en-US")} · ${handoff.windowHours}h entry rate: ${handoff.ratePerHour.toLocaleString("en-US", { maximumFractionDigits: 2 })} HOLLAR/h · editable throughput cap; model price and safety checks still apply`);
+          }
+        } catch (error) {
+          if (active && edits.current === revision) setBanner(`dashboard import failed: ${(error as Error).message}. showing the saved mainnet snapshot; entry rate was not applied.`);
+        }
+        if (active) setReady(true);
+        return;
+      }
       if (!Object.hasOwn(h, "s") && !Object.hasOwn(h, "b")) {
         setBanner("loading live mainnet state…");
         try {

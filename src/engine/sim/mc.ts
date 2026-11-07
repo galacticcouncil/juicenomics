@@ -197,6 +197,8 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
   let budgetOut = p.loop.budgetCap;
   // ExecutionController pacing: a full tranche closes its lane for paceSec, so a step trades at most this much each way
   const paceStep = p.loop.paceSec > 0 ? (p.loop.tranche * stepH * 3600) / p.loop.paceSec : Infinity;
+  const entryStep = p.loop.entryRateOn ? Math.max(0, p.loop.entryRatePerHour) * stepH : Infinity;
+  let observedEntry = entryStep;
   let paceIn = paceStep;
   let paceOut = paceStep;
   const reserve: Record<VaultKey, number> = { eth: p.policy.reserveUsd, btc: p.policy.reserveUsd };
@@ -548,6 +550,7 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
     }
     budgetIn = Math.min(p.loop.budgetCap + p.loop.budgetRefillPerSec * 3600 * stepH, budgetIn + p.loop.budgetRefillPerSec * 3600 * stepH);
     budgetOut = Math.min(p.loop.budgetCap + p.loop.budgetRefillPerSec * 3600 * stepH, budgetOut + p.loop.budgetRefillPerSec * 3600 * stepH);
+    observedEntry = entryStep;
     paceIn = paceStep;
     paceOut = paceStep;
     laneHours = 0;
@@ -844,7 +847,7 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
       const exposure = A * oracle;
       const borrowAllowed = !requests.length;
       const need = Math.max(borrowAllowed ? Lt * position - exposure : cash, 0);
-      const T = Math.min(p.loop.tranche, need, budgetIn, paceIn);
+      const T = Math.min(p.loop.tranche, need, budgetIn, paceIn, observedEntry);
       if (T < Math.min(1, p.loop.tranche * 0.02)) break;
       const out = quoteBuy(T) * (1 - solver);
       const shortfall = (1 - (out * oracle) / T) * 1e4;
@@ -858,6 +861,7 @@ export function runPath(p: Params, index: number, math?: StableswapWasm): PathRe
       B += T - fromCash;
       A += got;
       budgetIn -= T;
+      observedEntry -= T;
       paceIn -= T;
       const cost = T - got * oracle;
       ledger.entryCost += cost;
