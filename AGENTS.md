@@ -91,7 +91,8 @@ Options apply in this order, and all of them are optional: `--deployment`, then 
 
 ## vDOT / DOT alternative
 
-- `sim vdot` and the **vDOT / DOT** tab use a separate snapshot at mainnet #16706517 (6 Nov, 23:11 UTC). `--params` lists numerical fields; `--set useEMode=true|false` selects collateral mode. New links use `vd=vd2.…`; vd1 retains HF 1.15 when omitted. `sim link` decodes both, and legacy `cf`/`mc` reject them.
+- `sim vdot` and the **vDOT / DOT** tab use a separate snapshot at mainnet #16706517 (6 Nov, 23:11 UTC). `--params` lists numerical fields; `--set useEMode=true|false` selects collateral mode. New links use `vd=vd3.…`; vd1 retains HF 1.15 when omitted, vd2 uses 1.01, and both use the reserve curve. `sim link` decodes all three, and legacy `cf`/`mc` reject them.
+- `dotBorrowApr` overrides DOT borrowing interest, including zero. It defaults to `null` for the utilization-based reserve curve. CLI: `--set dotBorrowApr=0.03` for 3% APR, `--set dotBorrowApr=null` to restore the curve. Manual rates leave capacity checks, Main HOLLAR interest and the PRIME benchmark intact. Exports include both the applied rate and `dotMarketBorrowRate`.
 - Main still borrows HOLLAR. This is an alternative for new funding, not a three-way allocation or an active migration. Contracts and keepers are outside this preview's scope.
 - eMode permits 85% LTV with 92% LT: minimum borrowable HF is 1.08235294. Requested defaults are HF 1.01 and 69% fee. The 11.2222× target exceeds borrowing LTV and the candidate gross cap; preserve these flags. Native growth defaults to the annualized 30-day DOT-per-vDOT feed change, 4.3746% APR; never use vDOT/USD growth as staking yield.
 - DOT → aDOT → vDOT routes re-supply borrowed DOT. The model reflects this in reserve cash, supply and utilization. The resulting aDOT belongs to pool participants, not to this strategy; do not add its lending yield to the strategy's carry.

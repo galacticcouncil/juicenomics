@@ -9,6 +9,7 @@ export const VDOT_DEFAULTS = {
   fee: 0.69,
   stakingApr: market.vdotGrowth.simpleAnnualizedApr,
   mainDiscount: 0.4,
+  dotBorrowApr: null as number | null,
   dotResupplyShare: 1,
   grossCap: 500_000,
   netCap: 100_000,
@@ -20,12 +21,13 @@ export const VDOT_DEFAULTS = {
 export const VDOT_V1_DEFAULTS = { ...VDOT_DEFAULTS, hf: 1.15 };
 export type VdotParams = typeof VDOT_DEFAULTS;
 export type VdotNumericKey = Exclude<keyof VdotParams, "useEMode">;
-export const VDOT_FIELDS: { key: VdotNumericKey; label: string; unit: "$" | "%" | "×" | "DOT"; min: number; max: number; step: number; group: "Funding" | "Capacity assumptions" | "Price shock" | "Oracle stress"; help: string }[] = [
+export const VDOT_FIELDS: { key: VdotNumericKey; label: string; unit: "$" | "%" | "×" | "DOT"; min: number; max: number; step: number; nullable?: boolean; group: "Funding" | "Capacity assumptions" | "Price shock" | "Oracle stress"; help: string }[] = [
   { key: "tvl", label: "New depositor collateral", unit: "$", min: 1, max: 100_000_000, step: 1000, group: "Funding", help: "Additional TVL; Main borrows HOLLAR against the original vault collateral." },
   { key: "mainLtv", label: "Main HOLLAR LTV", unit: "%", min: 0, max: 0.8, step: 0.01, group: "Funding", help: "All of this new HOLLAR funding goes into the vDOT / DOT alternative. No existing capital is reallocated." },
   { key: "hf", label: "Loop target HF", unit: "×", min: 1.01, max: 3, step: 0.01, group: "Funding", help: "Both liquidation threshold and the maximum borrowing LTV matter. Targets below the minimum borrowable HF are flagged." },
   { key: "fee", label: "Harvest fee", unit: "%", min: 0, max: 1, step: 0.01, group: "Funding", help: "One fee on positive loop carry. Main HOLLAR interest is paid afterwards." },
   { key: "stakingApr", label: "vDOT growth APR in DOT", unit: "%", min: -0.5, max: 0.5, step: 0.001, group: "Funding", help: "Default: annualized 30-day growth of the on-chain DOT-per-vDOT exchange rate. Excludes DOT/USD moves and extra incentive rewards." },
+  { key: "dotBorrowApr", label: "DOT borrow APR", unit: "%", min: 0, max: 1, step: 0.001, nullable: true, group: "Funding", help: "Use the reserve curve or enter a fixed annual DOT borrowing rate. A fixed rate overrides utilization-based interest pricing; reserve and capacity checks still apply." },
   { key: "mainDiscount", label: "Main interest discount", unit: "%", min: 0, max: 1, step: 0.01, group: "Funding", help: "Applies to Main HOLLAR interest. DOT loop borrowing receives no discount." },
   { key: "dotResupplyShare", label: "Borrowed DOT re-supplied by swaps", unit: "%", min: 0, max: 1, step: 0.1, group: "Capacity assumptions", help: "Pinned routes wrap DOT into aDOT before buying vDOT in pool 690. This replenishes reserve cash; the aDOT belongs to the pool, so its yield is not credited to this strategy. Use 0% to test swaps without re-supply." },
   { key: "grossCap", label: "Candidate gross asset cap", unit: "$", min: 0, max: 1_000_000_000, step: 10_000, group: "Capacity assumptions", help: "A modeling limit on the additional vDOT position, not a deployed strategy parameter." },
@@ -46,6 +48,7 @@ export function vdotParams(input: unknown, defaults: VdotParams = VDOT_DEFAULTS)
   if (typeof p.useEMode !== "boolean") throw new Error("useEMode must be true or false");
   for (const f of VDOT_FIELDS) {
     const value = p[f.key];
+    if (value === null && f.nullable) continue;
     if (typeof value !== "number" || !Number.isFinite(value) || value < f.min || value > f.max) throw new Error(`${f.key} must be between ${f.min} and ${f.max}`);
   }
   return p;
@@ -76,7 +79,8 @@ export function evaluateVdot(input: VdotParams) {
   const dotDebt = (Number(d.variableDebt) + Number(d.stableDebt)) / 10 ** d.decimals + debtDOT;
   const dotSupply = Number(d.supply) / 10 ** d.decimals + dotResupply;
   const dotUtilization = dotDebt / (dotCash + dotDebt);
-  const dotBorrowRate = rate(dotUtilization, market.curves.DOT);
+  const dotMarketBorrowRate = rate(dotUtilization, market.curves.DOT);
+  const dotBorrowRate = p.dotBorrowApr ?? dotMarketBorrowRate;
   const vdotDebt = (Number(v.variableDebt) + Number(v.stableDebt)) / 10 ** v.decimals;
   const vdotSupply = Number(v.supply) / 10 ** v.decimals + assetsVdot;
   const vdotUtilization = vdotDebt / (Number(v.availableLiquidity) / 10 ** v.decimals + assetsVdot + vdotDebt);
@@ -126,7 +130,7 @@ export function evaluateVdot(input: VdotParams) {
   const legacyFee = Math.max(0, legacyCarry) * p.fee;
   return {
     leverage, lt, maxLtv, minimumBorrowableHf: lt / maxLtv, equityUSD, assetsUSD, debtUSD, debtDOT, assetsVdot,
-    dotResupply, dotCash, dotDebt, dotSupply, dotUtilization, dotBorrowRate, vdotSupply, vdotSupplyRate,
+    dotResupply, dotCash, dotDebt, dotSupply, dotUtilization, dotBorrowRate, dotMarketBorrowRate, vdotSupply, vdotSupplyRate,
     stakingIncomeUSD, supplyIncomeUSD, loopInterestUSD, carryUSD, feeUSD, mainInterestUSD,
     depositorUSD, depositorApr, depositorMonthlyApy: (1 + depositorApr / 12) ** 12 - 1,
     dotReserveIncomeUSD, protocolUSD, protocolIncomePerTvl: protocolUSD / p.tvl,

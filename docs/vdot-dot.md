@@ -47,6 +47,8 @@ the staking assumption comes from the on-chain Bifrost DOT-per-vDOT feed, not vD
 
 the default theoretical position has $75k net source funding, $841,666.67 vDOT assets and $766,666.67 DOT debt. reserve rates respond to the additional positions. vDOT lending income responds to its increased supply. the fee applies to positive carry after DOT interest; Main HOLLAR interest is then paid from what remains. negative carry remains a depositor loss, with no performance fee. the annual accounting assumes interest servicing; actual harvest/repayment liquidity is outside the model.
 
+DOT borrowing uses the reserve curve by default. uncheck **Use DOT reserve curve** to enter a fixed **DOT borrow APR** between 0% and 100%. the override changes DOT interest, depositor carry and protocol income. reserve utilization and capacity checks still use the modeled positions; Main HOLLAR interest and the PRIME benchmark are unchanged. the export records the applied rate and the rate the reserve curve would produce. `dotBorrowApr: null` restores automatic pricing; zero is a valid manual rate.
+
 the observed DOT → vDOT route wraps DOT into aDOT through Aave before swapping in pool 690. with 100% of borrowed DOT re-supplied by that route, reserve cash returns to its original level and total DOT supply increases alongside debt. the model therefore uses `(old debt + new debt) / (old cash + old debt + re-supply)` for utilization. the pool's aDOT is **not** a second position belonging to the strategy, and its lending income is not added to strategy carry. a control allows 0–100% re-supply to test alternate routes. interest rates and pool routing during a paced ramp remain uncertain.
 
 | harvest fee | depositor carry APR | monthly compounded APY | annual protocol income / TVL |
@@ -93,6 +95,8 @@ the original vault collateral is held fixed in these shocks. its own price movem
 ```sh
 npm run sim -- vdot --pretty
 npm run sim -- vdot --fee 0.22 --set hf=1.15
+npm run sim -- vdot --set dotBorrowApr=0.03
+npm run sim -- vdot --set dotBorrowApr=null
 npm run sim -- vdot --set dotMove=-0.3 --set vdotMove=0
 npm run sim -- vdot --set useEMode=false --set hf=1.25
 npm run sim -- vdot --params
@@ -104,4 +108,4 @@ SIM_URL=http://localhost:4173/ node scripts/smoke-vdot.mjs
 
 the quote script uses the SDK installed in the supplied Hydration UI checkout. it retains the one-shot historical pool list while using the SDK's own fee queries and router math. it never constructs or sends a transaction.
 
-new shares use `#t=vdot&vd=vd2.…` with complete assumptions; `sim link` decodes them and legacy engines reject them. old vd1 links preserve their settings and retain HF 1.15 when omitted. reset and new vd2 links use HF 1.01 with the same 69% fee. future snapshot changes require a new link version. the JSON export includes assumptions, results, market evidence, router quotes and oracle verification.
+new shares use `#t=vdot&vd=vd3.…` with complete assumptions, including the optional manual DOT borrow APR; `sim link` decodes them and legacy engines reject them. old vd1 links preserve their settings and retain HF 1.15 when omitted; vd2 keeps HF 1.01. both retain automatic reserve-curve pricing. reset uses HF 1.01, 69% fee and the reserve curve. future snapshot changes require a new link version. the JSON export includes assumptions, results, market evidence, router quotes and oracle verification.

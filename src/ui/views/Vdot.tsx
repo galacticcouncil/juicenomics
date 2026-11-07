@@ -37,7 +37,10 @@ export function Vdot({ p, onChange }: { p: VdotParams; onChange: (p: VdotParams)
         {(["Funding", "Price shock", "Oracle stress", "Capacity assumptions"] as const).map((group) => <details key={group} open={group === "Funding" || group === "Price shock"}>
           <summary>{group}</summary>
           {group === "Funding" && <label className="strategy-field toggle"><span><input type="checkbox" aria-label="DOT eMode" checked={p.useEMode} onChange={(e) => onChange({ ...p, useEMode: e.target.checked })} /> DOT eMode</span><small>{p.useEMode ? "85% max LTV / 92% liquidation threshold" : "60% max LTV / 70% liquidation threshold"}. Minimum borrowable HF: {fmtX(r.minimumBorrowableHf, 4)}.</small></label>}
-          {VDOT_FIELDS.filter((f) => f.group === group).map((f) => <NumericField key={f.key} field={f} value={p[f.key]} onChange={(value) => onChange({ ...p, [f.key]: value })} />)}
+          {VDOT_FIELDS.filter((f) => f.group === group).map((f) => <div key={f.key}>
+            {f.key === "dotBorrowApr" && <label className="strategy-field toggle"><span><input type="checkbox" aria-label="Use DOT reserve curve" checked={p.dotBorrowApr === null} onChange={(e) => onChange({ ...p, dotBorrowApr: e.target.checked ? null : r.dotMarketBorrowRate })} /> Use DOT reserve curve</span><small>After funding: {fmtPct(r.dotMarketBorrowRate, 4)} APR. Uncheck to enter your own rate.</small></label>}
+            <NumericField field={f} value={p[f.key] ?? r.dotMarketBorrowRate} disabled={f.key === "dotBorrowApr" && p.dotBorrowApr === null} onChange={(value) => onChange({ ...p, [f.key]: value })} />
+          </div>)}
         </details>)}
       </aside>
       <div className="strategy-results">
@@ -46,7 +49,7 @@ export function Vdot({ p, onChange }: { p: VdotParams; onChange: (p: VdotParams)
           <div className="tile"><div className="label">{r.capacityExceeded ? "Theoretical carry APR" : "Depositor carry APR"}</div><div className="value" data-testid="vdot-apr">{fmtPct(r.depositorApr)}</div><div className="sub">{fmtUsd(r.depositorUSD)} / year before execution costs</div></div>
           <div className="tile"><div className="label">Monthly compounded APY</div><div className="value">{fmtPct(r.depositorMonthlyApy)}</div><div className="sub">constant carry, no DOT price change</div></div>
           <div className="tile"><div className="label">Protocol income / TVL</div><div className="value">{fmtPct(r.protocolIncomePerTvl)}</div><div className="sub">{fmtUsd(r.protocolUSD)} / year; not an APY</div></div>
-          <div className="tile"><div className="label">Loop leverage / DOT borrow APR</div><div className="value">{fmtX(r.leverage)} / {fmtPct(r.dotBorrowRate)}</div><div className="sub">utilization after funding: {fmtPct(r.dotUtilization)}</div></div>
+          <div className="tile"><div className="label">Loop leverage / DOT borrow APR</div><div className="value">{fmtX(r.leverage)} / {fmtPct(r.dotBorrowRate)}</div><div className="sub">{p.dotBorrowApr === null ? "reserve curve" : "manual rate"}; utilization after funding: {fmtPct(r.dotUtilization)}</div></div>
         </div>
         <div className="strategy-cards">
           <section className="card"><h2>Annual carry waterfall</h2><Waterfall steps={[

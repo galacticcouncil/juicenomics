@@ -30,7 +30,7 @@ export function vdotCommand(a: Args) {
     const [key, value, ...extra] = entry.split("=");
     if (!key || !value?.trim() || extra.length) throw new Error("--set needs key=value (see vdot --params)");
     if (key === "useEMode" && value !== "true" && value !== "false") throw new Error("useEMode needs true or false");
-    p = vdotParams({ ...p, [key]: key === "useEMode" ? value === "true" : Number(value) });
+    p = vdotParams({ ...p, [key]: key === "useEMode" ? value === "true" : key === "dotBorrowApr" && value === "null" ? null : Number(value) });
   }
   p = vdotParams(p);
   const url = new URL("https://juicenomics-vdot.lark.hydration.cloud/");

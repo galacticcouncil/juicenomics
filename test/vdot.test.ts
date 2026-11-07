@@ -92,6 +92,27 @@ it("conserves income across depositors, protocol and DOT lenders with zero or po
   expect(loss.depositorApr).toBeLessThan(0);
 });
 
+it("uses manual DOT rates for interest and income while preserving reserve constraints", () => {
+  const automatic = evaluateVdot(VDOT_DEFAULTS);
+  expect(automatic.dotBorrowRate).toBe(automatic.dotMarketBorrowRate);
+  for (const dotBorrowApr of [0, 0.03, 0.1]) {
+    const r = evaluateVdot({ ...VDOT_DEFAULTS, dotBorrowApr });
+    expect(r.dotBorrowRate).toBe(dotBorrowApr);
+    expect(r.dotMarketBorrowRate).toBe(automatic.dotMarketBorrowRate);
+    expect(r.loopInterestUSD).toBeCloseTo(r.debtUSD * dotBorrowApr, 8);
+    expect(r.dotReserveIncomeUSD).toBeCloseTo(r.loopInterestUSD * 0.1, 8);
+    expect(r.stakingIncomeUSD + r.supplyIncomeUSD).toBeCloseTo(r.depositorUSD + r.protocolUSD + r.loopInterestUSD * 0.9, 8);
+    expect(r.checks).toEqual(automatic.checks);
+    expect(r.mainInterestUSD).toBe(automatic.mainInterestUSD);
+    expect(r.legacy).toEqual(automatic.legacy);
+    expect(r.stressedHf).toBe(automatic.stressedHf);
+  }
+  expect(evaluateVdot({ ...VDOT_DEFAULTS, dotBorrowApr: 0 }).depositorApr).toBeGreaterThan(automatic.depositorApr);
+  const loss = evaluateVdot({ ...VDOT_DEFAULTS, dotBorrowApr: 0.1 });
+  expect(loss.depositorApr).toBeLessThan(0);
+  expect(loss.feeUSD).toBe(0);
+});
+
 it("flags oversized targets, preserves their notional and handles an unlevered Main", () => {
   const huge = evaluateVdot({ ...VDOT_DEFAULTS, tvl: 100_000_000 });
   expect(huge.capacityExceeded).toBe(true);
@@ -115,25 +136,31 @@ it("preserves quote fees in output rather than charging them twice", () => {
 });
 
 it("round-trips every assumption and rejects malformed settings", () => {
-  const p = { ...VDOT_DEFAULTS, tvl: 500_000, hf: 1.3, useEMode: false, fee: 0.22, dotMove: 0.5, vdotMove: -0.1 };
+  const p = { ...VDOT_DEFAULTS, tvl: 500_000, hf: 1.3, useEMode: false, fee: 0.22, dotMove: 0.5, vdotMove: -0.1, dotBorrowApr: 0.03 };
   expect(decodeVdot(encodeVdot(p))).toEqual(p);
-  expect(encodeVdot(p)).toMatch(/^vd2\./);
-  expect(decodeVdot("vd1.e30").hf).toBe(1.15);
-  expect(decodeVdot("vd2.e30").hf).toBe(1.01);
-  expect(() => decodeVdot("vd3.e30")).toThrow(/version/);
+  expect(encodeVdot(p)).toMatch(/^vd3\./);
+  expect(decodeVdot("vd1.e30")).toMatchObject({ hf: 1.15, dotBorrowApr: null });
+  expect(decodeVdot("vd2.e30")).toMatchObject({ hf: 1.01, dotBorrowApr: null });
+  expect(decodeVdot("vd3.e30")).toEqual(VDOT_DEFAULTS);
+  expect(decodeVdot(encodeVdot({ ...p, dotBorrowApr: 0 })).dotBorrowApr).toBe(0);
+  expect(() => decodeVdot("vd4.e30")).toThrow(/version/);
   expect(() => decodeVdot("vd1.broken")).toThrow();
-  for (const input of [null, [], { tvl: 0 }, { hf: 1 }, { fee: Infinity }, { stakingApr: NaN }, { useEMode: "false" }, { dotMove: -1 }, { migration: 1 }]) expect(() => vdotParams(input)).toThrow();
+  for (const input of [null, [], { tvl: 0 }, { hf: 1 }, { fee: Infinity }, { fee: null }, { stakingApr: NaN }, { useEMode: "false" }, { dotMove: -1 }, { migration: 1 }, { dotBorrowApr: -0.01 }, { dotBorrowApr: 1.01 }, { dotBorrowApr: "0.03" }, { dotBorrowApr: Infinity }]) expect(() => vdotParams(input)).toThrow();
 });
 
 const cli = (...args: string[]) => spawnSync(process.execPath, ["--import", "tsx", "scripts/sim.mts", ...args], { encoding: "utf8", timeout: 60_000 });
 
 it("routes vDOT CLI links to the correct model without changing older models", () => {
-  const first = cli("vdot", "--fee", "0.22", "--set", "useEMode=false", "--set", "hf=1.25");
+  const first = cli("vdot", "--fee", "0.22", "--set", "useEMode=false", "--set", "hf=1.25", "--set", "dotBorrowApr=0.03");
   expect(first.status, first.stderr).toBe(0);
   const result = JSON.parse(first.stdout);
   const restored = cli("vdot", "--link", result.link);
   expect(restored.status, restored.stderr).toBe(0);
   expect(JSON.parse(restored.stdout)).toEqual(result);
+  expect(result.result.dotBorrowRate).toBe(0.03);
+  const automatic = JSON.parse(cli("vdot", "--link", result.link, "--set", "dotBorrowApr=null").stdout);
+  expect(automatic.params.dotBorrowApr).toBeNull();
+  expect(automatic.result.dotBorrowRate).toBe(automatic.result.dotMarketBorrowRate);
   expect(JSON.parse(cli("link", result.link).stdout).params).toEqual(result.params);
   expect(cli("mc", "--link", result.link).stderr).toContain("vDOT links need sim vdot");
   expect(cli("strategies", "--link", result.link).status).not.toBe(0);

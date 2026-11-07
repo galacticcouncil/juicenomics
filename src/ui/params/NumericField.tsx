@@ -1,9 +1,10 @@
 import { useState } from "react";
 
-export function NumericField({ field, value, onChange }: {
+export function NumericField({ field, value, onChange, disabled = false }: {
   field: { label: string; unit: string; min: number; max: number; step: number; help: string };
   value: number;
   onChange: (value: number) => void;
+  disabled?: boolean;
 }) {
   const scale = field.unit === "%" ? 100 : 1;
   const display = Number((value * scale).toPrecision(12));
@@ -11,7 +12,7 @@ export function NumericField({ field, value, onChange }: {
   const [editing, setEditing] = useState(false);
   return <label className="strategy-field">
     <span>{field.label} <span className="muted">{field.unit}</span></span>
-    <input aria-label={field.label} type="number" value={editing ? text : String(display)} min={field.min * scale} max={field.max * scale} step={field.step * scale}
+    <input aria-label={field.label} type="number" disabled={disabled} value={editing ? text : String(display)} min={field.min * scale} max={field.max * scale} step={field.step * scale}
       onFocus={() => { setText(String(display)); setEditing(true); }}
       onChange={(e) => {
         setText(e.target.value);
