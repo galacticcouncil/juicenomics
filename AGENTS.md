@@ -15,7 +15,7 @@ npm run sim -- backtest [--deployment lark0]        # replay a deployment's hist
 npm run sim -- hollar                               # HOLLAR supply, facilitator buckets, HSM inventory (mainnet)
 npm run sim -- strategies --weight 0.25 --fee 0.69    # marginal two-strategy carry, pinned mainnet, Main still HOLLAR
 npm run sim -- strategies --params                   # independent strategy settings, ranges and defaults
-npm run sim -- vdot --fee 0.69 --set hf=1.01          # vDOT/DOT alternative; Main stays HOLLAR
+npm run sim -- vdot --fee 0.69 --set hf=1.01          # direct DOT funding and vDOT/DOT loop
 npm run sim -- link 'https://juicenomics.lark.hydration.cloud/#s=2z…'   # decode a share link
 ```
 
@@ -91,15 +91,15 @@ Options apply in this order, and all of them are optional: `--deployment`, then 
 
 ## vDOT / DOT alternative
 
-- `sim vdot` and the **vDOT / DOT** tab use a separate snapshot at mainnet #16706517 (6 Nov, 23:11 UTC). `--params` lists numerical fields; `--set useEMode=true|false` selects collateral mode. New links use `vd=vd3.…`; vd1 retains HF 1.15 when omitted, vd2 uses 1.01, and both use the reserve curve. `sim link` decodes all three, and legacy `cf`/`mc` reject them.
-- `dotBorrowApr` overrides DOT borrowing interest, including zero. It defaults to `null` for the utilization-based reserve curve. CLI: `--set dotBorrowApr=0.03` for 3% APR, `--set dotBorrowApr=null` to restore the curve. Manual rates leave capacity checks, Main HOLLAR interest and the PRIME benchmark intact. Exports include both the applied rate and `dotMarketBorrowRate`.
-- Main still borrows HOLLAR. This is an alternative for new funding, not a three-way allocation or an active migration. Contracts and keepers are outside this preview's scope.
-- eMode permits 85% LTV with 92% LT: minimum borrowable HF is 1.08235294. Requested defaults are HF 1.01 and 69% fee. The 11.2222× target exceeds borrowing LTV and the candidate gross cap; preserve these flags. Native growth defaults to the annualized 30-day DOT-per-vDOT feed change, 4.3746% APR; never use vDOT/USD growth as staking yield.
-- DOT → aDOT → vDOT routes re-supply borrowed DOT. The model reflects this in reserve cash, supply and utilization. The resulting aDOT belongs to pool participants, not to this strategy; do not add its lending yield to the strategy's carry.
-- Carry assumes flat DOT/USD. Price-shock P&L is separate: at 75% Main LTV, a 30% DOT fall costs 22.5% of depositor TVL even when loop HF is unchanged. The lending oracle multiplies Bifrost's ten-minute conversion-rate feed by the same DOT/USD source as debt. Market discounts do not affect oracle HF; `vdotMove` explicitly stresses the conversion-rate feed. Debt growth can also affect HF.
-- `scripts/check-vdot-oracle.mjs` verifies the adapter code hash, shared DOT/USD source and conversion-rate product at the pinned and finalized blocks on two RPCs. `src/data/vdot-oracle.json` records the evidence.
-- The pinned 75k HOLLAR seed quote costs 16.88% versus the oracle. Quotes are independent one-shot observations, not a sequential ramp simulation; costs are excluded from carry APR and must not be double-counted from the route fee.
-- `scripts/snapshot-vdot.mjs` captures chain evidence; `scripts/quote-vdot.mjs` uses sdk-next from `HYDRATION_UI_ROOT`. Write new evidence to a separate file and bump the link version before replacing frozen defaults/snapshots. See [docs/vdot-dot.md](docs/vdot-dot.md).
-- `SIM_URL=http://localhost:4173/ node scripts/smoke-vdot.mjs` checks sharing/export, eMode, fee comparisons, price shocks, existing-tab isolation and mobile layout.
-- `scripts/publish-lark.sh vdot` targets only `juicenomics-vdot.lark.hydration.cloud`, with `-vdot` image tags and the vDOT tab as its default. `EXPECT_DEFAULT_TAB=vdot` adds a root-page check to the browser smoke run.
-- The deployed Main ledger has immutable HOLLAR/token bindings. The vDOT loop would borrow DOT behind a HOLLAR settlement interface; Main borrowing DOT is a different design requiring a new ledger and reviewed vault/settlement integration. `scripts/check-vdot-compatibility.mjs` verifies live bindings and launch runtime hashes on two RPCs.
+- `sim vdot` and the **vDOT / DOT** tab default to **original collateral → borrow DOT → buy vDOT → supply vDOT → borrow more DOT**. Both loans owe DOT; no HOLLAR funding or discount applies. This replaces the earlier HOLLAR-funded preview at the user's request.
+- Default fee 69%, loop HF 1.01, vault LTV 75%. The pinned GIGAETH standard-mode reference has 80% max LTV / 85% LT. The separate vDOT loop uses DOT eMode, 85% max LTV / 92% LT. HF 1.01 exceeds the loop borrow limit and gross cap; keep both flags.
+- Both DOT loans affect reserve debt, route re-supply and utilization. Both pay the selected rate. Protocol income includes the harvest fee and 10% reserve-factor income on both loans; the remaining DOT interest goes to suppliers. Never credit all vault DOT interest to the protocol.
+- `dotBorrowApr: null` uses the curve; `--set dotBorrowApr=0.03` selects 3%, `--set dotBorrowApr=null` restores it. Zero is valid. The manual rate is shared by both DOT loans. Exports include `dotMarketBorrowRate` for comparison.
+- Carry charges the harvest fee on positive source carry after loop interest, then pays the initial vault funding loan's interest. Native vDOT growth is DOT-per-vDOT feed growth, excluding DOT/USD and incentive rewards.
+- The oracle multiplies Bifrost's ten-minute conversion rate by the shared DOT/USD feed. Market discounts do not affect loop oracle HF. Common DOT moves leave principal matched after including the DOT funding loan; the original vault's collateral/DOT exposure still affects its own HF. Price shocks hold original collateral fixed in USD and omit keeper response.
+- `src/data/vdot-market.json` stays pinned at #16706517. `vdot-funding.json` cross-checks GIGAETH limits on two RPCs. `vdot-oracle.json` verifies the adapter product and code hash. `vdot-dot-quotes.json` contains real SDK quotes for DOT funding, including 4.95 bps seed cost; quotes are independent, not a sequential ramp. Keep earlier HOLLAR quotes frozen.
+- New links use `vd4`; vd1–vd3 retain HOLLAR funding, including 40% default Main discount. vd1 keeps HF 1.15, vd2/vd3 HF 1.01. `fundingAsset` is DOT by default; HOLLAR is supported for saved scenarios. A nonzero `mainDiscount` is rejected in DOT mode. Legacy engines reject vDOT links.
+- The PRIME benchmark remains HOLLAR-funded with its own 40% Main discount and existing loop assumptions. The older two-strategy view retains its own snapshot and settings.
+- The deployed Main ledger is immutable HOLLAR-bound. Direct DOT funding requires a different debt ledger and reviewed vault/repayment/settlement integration, plus the vDOT source and keeper. This is preview/economics only; no contract deployment or migration is included.
+- `scripts/check-vdot-funding.mjs`, `scripts/check-vdot-oracle.mjs` and `scripts/quote-vdot.mjs ... DOT` reproduce evidence. `scripts/smoke-vdot.mjs` covers funding, both HFs, configurable rates, old/new sharing, export and mobile. See [docs/vdot-dot.md](docs/vdot-dot.md).
+- `scripts/publish-lark.sh vdot` targets only `juicenomics-vdot.lark.hydration.cloud` with distinct image tags. The host opens vDOT by default; `EXPECT_DEFAULT_TAB=vdot` checks that behavior.

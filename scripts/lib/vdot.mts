@@ -7,7 +7,7 @@ export function vdotCommand(a: Args) {
   const allowed = ["params", "link", "config", "tvl", "fee", "pretty"];
   for (const key of Object.keys(a.flags)) if (!allowed.includes(key)) throw new Error(`vdot does not support --${key}`);
   for (const key of ["link", "config"]) if (a.flags[key] === true) throw new Error(`--${key} needs a value`);
-  if (a.flags.params) return { defaults: VDOT_DEFAULTS, fields: VDOT_FIELDS, useEMode: { type: "boolean", default: true } };
+  if (a.flags.params) return { defaults: VDOT_DEFAULTS, fields: VDOT_FIELDS, useEMode: { type: "boolean", default: true }, fundingAsset: { values: ["DOT", "HOLLAR"], default: "DOT" } };
   let p = { ...VDOT_DEFAULTS };
   if (typeof a.flags.link === "string") {
     const value = a.flags.link;
@@ -30,7 +30,7 @@ export function vdotCommand(a: Args) {
     const [key, value, ...extra] = entry.split("=");
     if (!key || !value?.trim() || extra.length) throw new Error("--set needs key=value (see vdot --params)");
     if (key === "useEMode" && value !== "true" && value !== "false") throw new Error("useEMode needs true or false");
-    p = vdotParams({ ...p, [key]: key === "useEMode" ? value === "true" : key === "dotBorrowApr" && value === "null" ? null : Number(value) });
+    p = vdotParams({ ...p, [key]: key === "fundingAsset" ? value : key === "useEMode" ? value === "true" : key === "dotBorrowApr" && value === "null" ? null : Number(value) });
   }
   p = vdotParams(p);
   const url = new URL("https://juicenomics-vdot.lark.hydration.cloud/");

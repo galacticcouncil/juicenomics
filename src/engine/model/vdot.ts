@@ -1,14 +1,17 @@
 import market from "../../data/vdot-market.json";
+import funding from "../../data/vdot-funding.json";
 
 export const VDOT_MARKET = market;
 export const VDOT_DEFAULTS = {
+  fundingAsset: "DOT" as "DOT" | "HOLLAR",
   tvl: 100_000,
   mainLtv: 0.75,
+  mainLt: funding.reserve.ltBps / 1e4,
   hf: 1.01,
   useEMode: true,
   fee: 0.69,
   stakingApr: market.vdotGrowth.simpleAnnualizedApr,
-  mainDiscount: 0.4,
+  mainDiscount: 0,
   dotBorrowApr: null as number | null,
   dotResupplyShare: 1,
   grossCap: 500_000,
@@ -18,20 +21,22 @@ export const VDOT_DEFAULTS = {
   dotMove: -0.3,
   vdotMove: 0,
 };
-export const VDOT_V1_DEFAULTS = { ...VDOT_DEFAULTS, hf: 1.15 };
+export const VDOT_V3_DEFAULTS = { ...VDOT_DEFAULTS, fundingAsset: "HOLLAR" as const, mainDiscount: 0.4 };
+export const VDOT_V1_DEFAULTS = { ...VDOT_V3_DEFAULTS, hf: 1.15 };
 export type VdotParams = typeof VDOT_DEFAULTS;
-export type VdotNumericKey = Exclude<keyof VdotParams, "useEMode">;
+export type VdotNumericKey = Exclude<keyof VdotParams, "useEMode" | "fundingAsset">;
 export const VDOT_FIELDS: { key: VdotNumericKey; label: string; unit: "$" | "%" | "×" | "DOT"; min: number; max: number; step: number; nullable?: boolean; group: "Funding" | "Capacity assumptions" | "Price shock" | "Oracle stress"; help: string }[] = [
-  { key: "tvl", label: "New depositor collateral", unit: "$", min: 1, max: 100_000_000, step: 1000, group: "Funding", help: "Additional TVL; Main borrows HOLLAR against the original vault collateral." },
-  { key: "mainLtv", label: "Main HOLLAR LTV", unit: "%", min: 0, max: 0.8, step: 0.01, group: "Funding", help: "All of this new HOLLAR funding goes into the vDOT / DOT alternative. No existing capital is reallocated." },
+  { key: "tvl", label: "New depositor collateral", unit: "$", min: 1, max: 100_000_000, step: 1000, group: "Funding", help: "Additional original vault collateral. The initial loan against it funds the vDOT loop." },
+  { key: "mainLtv", label: "Vault borrowing LTV", unit: "%", min: 0, max: 0.8, step: 0.01, group: "Funding", help: "Initial funding debt divided by original vault collateral. All initial funding buys vDOT; no existing capital is reallocated." },
+  { key: "mainLt", label: "Vault collateral liquidation threshold", unit: "%", min: 0.01, max: 1, step: 0.01, group: "Funding", help: "Default: GIGAETH standard mode at the pinned block, 85%. This vault account is separate from the vDOT/DOT eMode loop." },
   { key: "hf", label: "Loop target HF", unit: "×", min: 1.01, max: 3, step: 0.01, group: "Funding", help: "Both liquidation threshold and the maximum borrowing LTV matter. Targets below the minimum borrowable HF are flagged." },
-  { key: "fee", label: "Harvest fee", unit: "%", min: 0, max: 1, step: 0.01, group: "Funding", help: "One fee on positive loop carry. Main HOLLAR interest is paid afterwards." },
+  { key: "fee", label: "Harvest fee", unit: "%", min: 0, max: 1, step: 0.01, group: "Funding", help: "Fee on positive source carry after loop interest. Interest on the initial vault funding loan is paid afterwards." },
   { key: "stakingApr", label: "vDOT growth APR in DOT", unit: "%", min: -0.5, max: 0.5, step: 0.001, group: "Funding", help: "Default: annualized 30-day growth of the on-chain DOT-per-vDOT exchange rate. Excludes DOT/USD moves and extra incentive rewards." },
-  { key: "dotBorrowApr", label: "DOT borrow APR", unit: "%", min: 0, max: 1, step: 0.001, nullable: true, group: "Funding", help: "Use the reserve curve or enter a fixed annual DOT borrowing rate. A fixed rate overrides utilization-based interest pricing; reserve and capacity checks still apply." },
+  { key: "dotBorrowApr", label: "DOT borrow APR", unit: "%", min: 0, max: 1, step: 0.001, nullable: true, group: "Funding", help: "Applies to every DOT loan in this scenario. Use the reserve curve or a fixed annual rate; reserve and capacity checks still apply." },
   { key: "mainDiscount", label: "Main interest discount", unit: "%", min: 0, max: 1, step: 0.01, group: "Funding", help: "Applies to Main HOLLAR interest. DOT loop borrowing receives no discount." },
   { key: "dotResupplyShare", label: "Borrowed DOT re-supplied by swaps", unit: "%", min: 0, max: 1, step: 0.1, group: "Capacity assumptions", help: "Pinned routes wrap DOT into aDOT before buying vDOT in pool 690. This replenishes reserve cash; the aDOT belongs to the pool, so its yield is not credited to this strategy. Use 0% to test swaps without re-supply." },
   { key: "grossCap", label: "Candidate gross asset cap", unit: "$", min: 0, max: 1_000_000_000, step: 10_000, group: "Capacity assumptions", help: "A modeling limit on the additional vDOT position, not a deployed strategy parameter." },
-  { key: "netCap", label: "Candidate net funding cap", unit: "$", min: 0, max: 100_000_000, step: 10_000, group: "Capacity assumptions", help: "A modeling limit on HOLLAR assigned to this strategy." },
+  { key: "netCap", label: "Candidate net funding cap", unit: "$", min: 0, max: 100_000_000, step: 10_000, group: "Capacity assumptions", help: "USD value of the initial funding loan assigned to this strategy." },
   { key: "dotCashFloor", label: "DOT reserve cash to retain", unit: "DOT", min: 0, max: 100_000_000, step: 100_000, group: "Capacity assumptions", help: "Remaining reserve cash after borrowing and swap-route re-supply. Entry still needs cash for each borrow tranche." },
   { key: "dotUtilizationMax", label: "DOT utilization ceiling", unit: "%", min: 0, max: 1, step: 0.01, group: "Capacity assumptions", help: "Defaults to the rate curve's 85% kink. Rates rise rapidly above it." },
   { key: "dotMove", label: "DOT / USD price move", unit: "%", min: -0.9, max: 2, step: 0.05, group: "Price shock", help: "Instantaneous move in both vDOT and DOT dollar prices. Original vault collateral stays fixed; this measures source exposure only." },
@@ -42,10 +47,12 @@ export function vdotParams(input: unknown, defaults: VdotParams = VDOT_DEFAULTS)
   if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("vDOT settings must be an object");
   const values = input as Record<string, unknown>;
   for (const key of Object.keys(values)) {
-    if (key !== "useEMode" && !VDOT_FIELDS.some((f) => f.key === key)) throw new Error(`unknown vDOT setting: ${key}`);
+    if (key !== "useEMode" && key !== "fundingAsset" && !VDOT_FIELDS.some((f) => f.key === key)) throw new Error(`unknown vDOT setting: ${key}`);
   }
   const p = { ...defaults, ...values };
   if (typeof p.useEMode !== "boolean") throw new Error("useEMode must be true or false");
+  if (p.fundingAsset !== "DOT" && p.fundingAsset !== "HOLLAR") throw new Error("fundingAsset must be DOT or HOLLAR");
+  if (p.fundingAsset === "DOT" && p.mainDiscount !== 0) throw new Error("mainDiscount applies only to saved HOLLAR funding scenarios; DOT funding has no discount");
   for (const f of VDOT_FIELDS) {
     const value = p[f.key];
     if (value === null && f.nullable) continue;
@@ -73,10 +80,12 @@ export function evaluateVdot(input: VdotParams) {
   const debtUSD = assetsUSD - equityUSD;
   const dotPrice = Number(d.priceUSD8) / 1e8, vdotPrice = Number(v.priceUSD8) / 1e8;
   const debtDOT = debtUSD / dotPrice, assetsVdot = assetsUSD / vdotPrice;
-  const dotResupply = debtDOT * p.dotResupplyShare;
+  const mainDebtDOT = p.fundingAsset === "DOT" ? equityUSD / dotPrice : 0;
+  const totalDebtDOT = debtDOT + mainDebtDOT;
+  const dotResupply = totalDebtDOT * p.dotResupplyShare;
   const dotBaseCash = Number(d.availableLiquidity) / 10 ** d.decimals;
-  const dotCash = dotBaseCash - debtDOT + dotResupply;
-  const dotDebt = (Number(d.variableDebt) + Number(d.stableDebt)) / 10 ** d.decimals + debtDOT;
+  const dotCash = dotBaseCash - totalDebtDOT + dotResupply;
+  const dotDebt = (Number(d.variableDebt) + Number(d.stableDebt)) / 10 ** d.decimals + totalDebtDOT;
   const dotSupply = Number(d.supply) / 10 ** d.decimals + dotResupply;
   const dotUtilization = dotDebt / (dotCash + dotDebt);
   const dotMarketBorrowRate = rate(dotUtilization, market.curves.DOT);
@@ -90,19 +99,26 @@ export function evaluateVdot(input: VdotParams) {
   const loopInterestUSD = debtUSD * dotBorrowRate;
   const carryUSD = stakingIncomeUSD + supplyIncomeUSD - loopInterestUSD;
   const feeUSD = Math.max(0, carryUSD) * p.fee;
-  const mainInterestUSD = equityUSD * Number(market.reserves.HOLLAR.borrowRateRay) / 1e27 * (1 - p.mainDiscount);
+  const mainBorrowRate = p.fundingAsset === "DOT" ? dotBorrowRate : Number(market.reserves.HOLLAR.borrowRateRay) / 1e27 * (1 - p.mainDiscount);
+  const mainInterestUSD = equityUSD * mainBorrowRate;
   const depositorUSD = carryUSD - feeUSD - mainInterestUSD;
-  const dotReserveIncomeUSD = loopInterestUSD * Number(d.reserveFactorBps) / 1e4;
-  const protocolUSD = feeUSD + mainInterestUSD + dotReserveIncomeUSD;
+  const totalDotInterestUSD = loopInterestUSD + (p.fundingAsset === "DOT" ? mainInterestUSD : 0);
+  const dotReserveIncomeUSD = totalDotInterestUSD * Number(d.reserveFactorBps) / 1e4;
+  const mainProtocolIncomeUSD = p.fundingAsset === "HOLLAR" ? mainInterestUSD : 0;
+  const protocolUSD = feeUSD + mainProtocolIncomeUSD + dotReserveIncomeUSD;
   const depositorApr = depositorUSD / p.tvl;
   const stressedAssetsUSD = assetsUSD * (1 + p.dotMove) * (1 + p.vdotMove);
   const stressedDebtUSD = debtUSD * (1 + p.dotMove);
-  const stressedEquityUSD = stressedAssetsUSD - stressedDebtUSD;
-  const pricePnlUSD = stressedEquityUSD - equityUSD;
+  const stressedMainDebtUSD = equityUSD * (p.fundingAsset === "DOT" ? 1 + p.dotMove : 1);
+  const pricePnlUSD = (p.fundingAsset === "HOLLAR" ? equityUSD * p.dotMove : 0) + assetsUSD * p.vdotMove * (1 + p.dotMove);
+  const stressedEquityUSD = stressedMainDebtUSD + pricePnlUSD;
   const stressedHf = debtUSD > 0 ? stressedAssetsUSD * lt / stressedDebtUSD : null;
+  const stressedMainHf = equityUSD > 0 ? p.tvl * p.mainLt / stressedMainDebtUSD : null;
   const poolVdot = Number(market.pool690.balances[15]) / 10 ** v.decimals;
   const active = equityUSD > 0;
   const checks = [
+    { label: "Vault reference collateral active, unpaused and not isolated", ok: funding.reserve.active === 1 && funding.reserve.paused === 0 && funding.reserve.frozen === 0 && funding.reserve.isolationCeilingUSD2 === 0 },
+    { label: "Vault funding LTV fits the reference collateral and assumed liquidation threshold", ok: p.mainLtv <= funding.reserve.ltvBps / 1e4 && (!active || p.mainLtv < p.mainLt) },
     { label: "vDOT collateral active, unfrozen and unpaused", ok: v.active === "1" && v.frozen === "0" && v.paused === "0" && maxLtv > 0 },
     { label: "DOT borrowing active, unfrozen and unpaused", ok: d.active === "1" && d.frozen === "0" && d.paused === "0" && d.borrowing === "1" },
     { label: "Matching DOT eMode and supported price source", ok: !p.useEMode || (v.eMode !== "0" && v.eMode === d.eMode && market.eMode.priceSource === "0x0000000000000000000000000000000000000000") },
@@ -128,23 +144,26 @@ export function evaluateVdot(input: VdotParams) {
   const legacyInterest = (legacyDebt - Math.min(legacyDebt, 5_000_000) * 0.9) * Number(market.reserves.HOLLAR.borrowRateRay) / 1e27;
   const legacyCarry = legacyAssets * (0.062 + primeSupplyRate) - legacyInterest;
   const legacyFee = Math.max(0, legacyCarry) * p.fee;
+  const legacyMainInterest = equityUSD * Number(market.reserves.HOLLAR.borrowRateRay) / 1e27 * (1 - (p.fundingAsset === "HOLLAR" ? p.mainDiscount : VDOT_V3_DEFAULTS.mainDiscount));
   return {
-    leverage, lt, maxLtv, minimumBorrowableHf: lt / maxLtv, equityUSD, assetsUSD, debtUSD, debtDOT, assetsVdot,
+    leverage, lt, maxLtv, minimumBorrowableHf: lt / maxLtv, equityUSD, assetsUSD, debtUSD, debtDOT, mainDebtDOT, totalDebtDOT, assetsVdot,
     dotResupply, dotCash, dotDebt, dotSupply, dotUtilization, dotBorrowRate, dotMarketBorrowRate, vdotSupply, vdotSupplyRate,
-    stakingIncomeUSD, supplyIncomeUSD, loopInterestUSD, carryUSD, feeUSD, mainInterestUSD,
+    stakingIncomeUSD, supplyIncomeUSD, loopInterestUSD, carryUSD, feeUSD, mainBorrowRate, mainInterestUSD, totalDotInterestUSD, mainProtocolIncomeUSD,
     depositorUSD, depositorApr, depositorMonthlyApy: (1 + depositorApr / 12) ** 12 - 1,
     dotReserveIncomeUSD, protocolUSD, protocolIncomePerTvl: protocolUSD / p.tvl,
     breakEvenFee: carryUSD > 0 ? 1 - mainInterestUSD / carryUSD : null,
-    netDotExposure: equityUSD / dotPrice,
+    netDotExposure: p.fundingAsset === "DOT" ? 0 : equityUSD / dotPrice,
     stressedAssetsUSD, stressedDebtUSD, stressedEquityUSD, pricePnlUSD, pricePnlPerTvl: pricePnlUSD / p.tvl,
-    stressedHf, stressedSourceCoverage: active ? stressedEquityUSD / equityUSD : null,
-    sourceShortfallUSD: Math.max(0, equityUSD - stressedEquityUSD),
+    stressedHf, stressedMainDebtUSD, stressedMainHf, mainLiquidatable: stressedMainHf !== null && stressedMainHf < 1,
+    stressedMainLtv: stressedMainDebtUSD / p.tvl,
+    stressedSourceCoverage: active ? stressedEquityUSD / stressedMainDebtUSD : null,
+    sourceShortfallUSD: Math.max(0, -pricePnlUSD),
     liquidatable: stressedHf !== null && stressedHf < 1,
     poolVdot, checks, capacityExceeded: checks.some((x) => !x.ok),
-    legacy: { depositorApr: (legacyCarry - legacyFee - mainInterestUSD) / p.tvl,
-      protocolIncomePerTvl: (legacyFee + mainInterestUSD + legacyInterest) / p.tvl,
+    legacy: { depositorApr: (legacyCarry - legacyFee - legacyMainInterest) / p.tvl,
+      protocolIncomePerTvl: (legacyFee + legacyMainInterest + legacyInterest) / p.tvl,
       hollarDebt: equityUSD + legacyDebt, leverage: legacyLeverage },
   };
 }
 
-export const VDOT_SCOPE = "Alternative source for marginal new HOLLAR funding. Steady-state carry at flat DOT/USD, separate instantaneous price shocks, no active capital reallocation. Excludes entry/exit fees, gas, ramp, churn, incentives and keeper response. Router quotes are pinned one-shot observations, not a full-ramp execution simulation. Original vault collateral is held fixed in price shocks. Positive source P&L is unrealized and shown before any harvesting fee.";
+export const VDOT_SCOPE = "Direct DOT funding against original vault collateral, then a separate vDOT/DOT loop; saved HOLLAR-funded scenarios retain their earlier semantics. Steady-state carry at flat DOT/USD, separate instantaneous price shocks, no active capital reallocation. Excludes entry/exit fees, gas, ramp, churn, incentives and keeper response. Router quotes are independent one-shot observations, not a ramp simulation. Original vault collateral stays fixed in USD in price shocks. Requires a DOT-denominated Main ledger and settlement design; current deployed Main is bound to HOLLAR.";
