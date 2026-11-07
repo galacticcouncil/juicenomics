@@ -170,3 +170,43 @@ svg .val { fill: var(--text-primary); font-variant-numeric: tabular-nums; }
 button.primary:hover:not(:disabled) { background: color-mix(in srgb, var(--series-1) 85%, black); }
 .popover { position: absolute; top: 34px; left: 0; z-index: 10; width: 360px; background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; box-shadow: 0 6px 24px #0003; display: grid; gap: 8px; }
 .popover label { display: grid; gap: 3px; font-size: 12px; color: var(--text-secondary); }
+
+.strategy-app { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+.strategies { max-width: 1580px; margin: 0 auto; }
+.strategy-intro { display: flex; align-items: start; gap: 24px; justify-content: space-between; }
+.strategy-intro > div:first-child { max-width: 850px; }
+.strategy-intro h1 { font-size: 24px; margin: 12px 0 8px; letter-spacing: -.025em; }
+.strategies p { line-height: 1.6; }
+.strategy-layout { display: grid; grid-template-columns: 290px minmax(0, 1fr); gap: 18px; margin-top: 18px; }
+.strategy-settings { align-self: start; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-1); }
+.strategy-settings details + details { border-top: 1px solid var(--border); }
+.strategies summary { cursor: pointer; padding: 12px; font-weight: 600; }
+.strategy-field { display: grid; gap: 6px; padding: 8px 14px 14px; }
+.strategy-field input { box-sizing: border-box; width: 100%; padding: 7px; font-variant-numeric: tabular-nums; }
+.strategy-field input[type="checkbox"] { width: auto; margin: 0; }
+.strategy-field.toggle > span { display: flex; align-items: center; gap: 8px; }
+.strategy-field small { color: var(--text-secondary); line-height: 1.45; }
+.strategy-results { min-width: 0; }
+.strategy-results > .card, .strategy-cards { margin-bottom: 14px; }
+.strategy-results .tiles { margin-top: 0; }
+.strategy-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.strategy-slider { display: grid; gap: 6px; margin-top: 14px; }
+.strategy-slider input { width: 100%; accent-color: var(--series-3); }
+.strategy-table { overflow-x: auto; }
+.strategy-checks { list-style: none; padding: 0; }
+.strategy-checks li { display: flex; gap: 12px; align-items: baseline; margin: 9px 0; }
+.strategy-checks span { min-width: 120px; font-size: 11px; }
+.strategy-checks .pass { color: var(--text-secondary); }
+.strategy-checks .fail { color: var(--critical); font-weight: 600; }
+.strategy-hash { overflow-wrap: anywhere; }
+.vdot-risk { border-color: var(--series-2); }
+.vdot-view button[aria-pressed="true"] { background: var(--text-primary); color: var(--surface-1); }
+@media (max-width: 1150px) { .strategy-cards { grid-template-columns: 1fr; } }
+@media (max-width: 700px) {
+  .strategy-layout { grid-template-columns: 1fr; }
+  .strategy-intro { display: block; }
+  .strategy-app .main { padding: 10px 12px 40px; }
+  .strategy-app .top { position: static; }
+  .strategy-results .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .strategy-results .tile .value { font-size: 21px; }
+}

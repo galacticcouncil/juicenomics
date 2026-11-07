@@ -1,0 +1,234 @@
+{
+  "block": "16706517",
+  "hash": "0x95fc79bfdb3d780b1839ece009bd62cb9e89d12d11f2afe99de715f9a3334683",
+  "sdkVersion": "1.5.1",
+  "funding": "DOT",
+  "scope": "independent one-shot quotes at a pinned block; no shared pool mutation between quotes; not a ramp or executable guarantee",
+  "quotes": [
+    {
+      "assetIn": 5,
+      "assetOut": 15,
+      "amountIn": "1000",
+      "role": "small entry",
+      "quote": {
+        "type": "Sell",
+        "amountIn": "1000",
+        "amountOut": "598.8952114147",
+        "spotPrice": "0.59931018905435134",
+        "tradeFee": "0.4135230267",
+        "tradeFeePct": 0.07,
+        "priceImpactPct": 0,
+        "swaps": [
+          {
+            "poolAddress": "7JoHqoU5f91uWTtjTXhuNSFV7YgEvfvwUbK8Bj27Sq4S9tbd",
+            "pool": "Aave",
+            "assetIn": 5,
+            "assetOut": 1001,
+            "amountIn": "1000",
+            "amountOut": "1000",
+            "calculatedOut": "1000",
+            "spotPrice": "1",
+            "tradeFeePct": 0,
+            "priceImpactPct": 0,
+            "errors": []
+          },
+          {
+            "poolAddress": "7Ni2vDQ41AMCzx8pBpNvL3CtrkprAaAB73NzyJy6T17PaGHo",
+            "poolId": 690,
+            "pool": "Stableswap",
+            "assetIn": 1001,
+            "assetOut": 15,
+            "amountIn": "1000",
+            "amountOut": "598.8952114147",
+            "calculatedOut": "599.3087344414",
+            "spotPrice": "0.59931018905435134",
+            "tradeFeePct": 0.07,
+            "priceImpactPct": 0,
+            "errors": []
+          }
+        ]
+      },
+      "costVsOracleBps": 3.0048979815011645
+    },
+    {
+      "assetIn": 5,
+      "assetOut": 15,
+      "amountIn": "81676.7642924346",
+      "role": "funding",
+      "quote": {
+        "type": "Sell",
+        "amountIn": "81676.7642924346",
+        "amountOut": "48906.3001285249",
+        "spotPrice": "0.59931018905435134",
+        "tradeFee": "33.7686474554",
+        "tradeFeePct": 0.07,
+        "priceImpactPct": -0.02,
+        "swaps": [
+          {
+            "poolAddress": "7JoHqoU5f91uWTtjTXhuNSFV7YgEvfvwUbK8Bj27Sq4S9tbd",
+            "pool": "Aave",
+            "assetIn": 5,
+            "assetOut": 1001,
+            "amountIn": "81676.7642924346",
+            "amountOut": "81676.7642924346",
+            "calculatedOut": "81676.7642924346",
+            "spotPrice": "1",
+            "tradeFeePct": 0,
+            "priceImpactPct": 0,
+            "errors": []
+          },
+          {
+            "poolAddress": "7Ni2vDQ41AMCzx8pBpNvL3CtrkprAaAB73NzyJy6T17PaGHo",
+            "poolId": 690,
+            "pool": "Stableswap",
+            "assetIn": 1001,
+            "assetOut": 15,
+            "amountIn": "81676.7642924346",
+            "amountOut": "48906.3001285249",
+            "calculatedOut": "48940.0687759803",
+            "spotPrice": "0.59931018905435134",
+            "tradeFeePct": 0.07,
+            "priceImpactPct": -0.02,
+            "errors": []
+          }
+        ]
+      },
+      "costVsOracleBps": 4.951104329987688
+    },
+    {
+      "assetIn": 5,
+      "assetOut": 15,
+      "amountIn": "834918.0349893316",
+      "role": "loop",
+      "quote": {
+        "type": "Sell",
+        "amountIn": "834918.0349893316",
+        "amountOut": "498873.3622086743",
+        "spotPrice": "0.59931018905435134",
+        "tradeFee": "344.4602975292",
+        "tradeFeePct": 0.07,
+        "priceImpactPct": -0.23,
+        "swaps": [
+          {
+            "poolAddress": "7JoHqoU5f91uWTtjTXhuNSFV7YgEvfvwUbK8Bj27Sq4S9tbd",
+            "pool": "Aave",
+            "assetIn": 5,
+            "assetOut": 1001,
+            "amountIn": "834918.0349893316",
+            "amountOut": "834918.0349893316",
+            "calculatedOut": "834918.0349893316",
+            "spotPrice": "1",
+            "tradeFeePct": 0,
+            "priceImpactPct": 0,
+            "errors": []
+          },
+          {
+            "poolAddress": "7Ni2vDQ41AMCzx8pBpNvL3CtrkprAaAB73NzyJy6T17PaGHo",
+            "poolId": 690,
+            "pool": "Stableswap",
+            "assetIn": 1001,
+            "assetOut": 15,
+            "amountIn": "834918.0349893316",
+            "amountOut": "498873.3622086743",
+            "calculatedOut": "499217.8225062035",
+            "spotPrice": "0.59931018905435134",
+            "tradeFeePct": 0.07,
+            "priceImpactPct": -0.23,
+            "errors": []
+          }
+        ]
+      },
+      "costVsOracleBps": 26.09766149256898
+    },
+    {
+      "assetIn": 15,
+      "assetOut": 5,
+      "amountIn": "1000",
+      "role": "small exit",
+      "quote": {
+        "type": "Sell",
+        "amountIn": "1000",
+        "amountOut": "1667.4269354262",
+        "spotPrice": "1.66858501367696615",
+        "tradeFee": "1.1513189955",
+        "tradeFeePct": 0.07,
+        "priceImpactPct": 0,
+        "swaps": [
+          {
+            "poolAddress": "7Ni2vDQ41AMCzx8pBpNvL3CtrkprAaAB73NzyJy6T17PaGHo",
+            "poolId": 690,
+            "pool": "Stableswap",
+            "assetIn": 15,
+            "assetOut": 1001,
+            "amountIn": "1000",
+            "amountOut": "1667.4269354262",
+            "calculatedOut": "1668.5782544217",
+            "spotPrice": "1.66858501367696615",
+            "tradeFeePct": 0.07,
+            "priceImpactPct": 0,
+            "errors": []
+          },
+          {
+            "poolAddress": "7JoHqoU5f91uWTtjTXhuNSFV7YgEvfvwUbK8Bj27Sq4S9tbd",
+            "pool": "Aave",
+            "assetIn": 1001,
+            "assetOut": 5,
+            "amountIn": "1667.4269354262",
+            "amountOut": "1667.4269354262",
+            "calculatedOut": "1667.4269354262",
+            "spotPrice": "1",
+            "tradeFeePct": 0,
+            "priceImpactPct": 0,
+            "errors": []
+          }
+        ]
+      },
+      "costVsOracleBps": 10.85829471889288
+    },
+    {
+      "assetIn": 15,
+      "assetOut": 5,
+      "amountIn": "100000",
+      "role": "large exit",
+      "quote": {
+        "type": "Sell",
+        "amountIn": "100000",
+        "amountOut": "166674.2631268709",
+        "spotPrice": "1.66858501367696615",
+        "tradeFee": "115.084649966",
+        "tradeFeePct": 0.07,
+        "priceImpactPct": -0.04,
+        "swaps": [
+          {
+            "poolAddress": "7Ni2vDQ41AMCzx8pBpNvL3CtrkprAaAB73NzyJy6T17PaGHo",
+            "poolId": 690,
+            "pool": "Stableswap",
+            "assetIn": 15,
+            "assetOut": 1001,
+            "amountIn": "100000",
+            "amountOut": "166674.2631268709",
+            "calculatedOut": "166789.3477768369",
+            "spotPrice": "1.66858501367696615",
+            "tradeFeePct": 0.07,
+            "priceImpactPct": -0.04,
+            "errors": []
+          },
+          {
+            "poolAddress": "7JoHqoU5f91uWTtjTXhuNSFV7YgEvfvwUbK8Bj27Sq4S9tbd",
+            "pool": "Aave",
+            "assetIn": 1001,
+            "assetOut": 5,
+            "amountIn": "166674.2631268709",
+            "amountOut": "166674.2631268709",
+            "calculatedOut": "166674.2631268709",
+            "spotPrice": "1",
+            "tradeFeePct": 0,
+            "priceImpactPct": 0,
+            "errors": []
+          }
+        ]
+      },
+      "costVsOracleBps": 14.95779140655129
+    }
+  ]
+}

@@ -1,0 +1,70 @@
+import assert from "node:assert/strict";
+import { mkdirSync } from "node:fs";
+import { chromium } from "playwright-core";
+
+const origin = process.env.SIM_URL ?? "http://localhost:4173/";
+const out = new URL("../screens/", import.meta.url).pathname;
+mkdirSync(out, { recursive: true });
+const browser = await chromium.launch({ headless: true, executablePath: process.env.BROWSER ?? "/usr/bin/brave" });
+const errors = [];
+const pages = [];
+const open = async (url, width = 1440, colorScheme = "light") => {
+  const page = await browser.newPage({ viewport: { width, height: 1000 }, colorScheme });
+  pages.push(page);
+  page.on("pageerror", (e) => errors.push(String(e)));
+  page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
+  await page.goto(url, { waitUntil: "networkidle" });
+  await page.waitForSelector(".strategies", { timeout: 20000 });
+  return page;
+};
+const check = (ok, message) => { assert.ok(ok, message); console.log(`ok   ${message}`); };
+
+try {
+  const page = await open(`${origin}#t=strategies`);
+  check(await page.getByTestId("strategy-apr").innerText() === "6.78%", "0% apyUSD reproduces the pinned carry study");
+  check(await page.locator(".strategies .banner").innerText().then((x) => x.includes("Legacy-only") && x.includes("activation") === false), "launch defaults to legacy only with pinned blockers shown");
+  check(await page.locator("header [aria-label=deployment]").count() === 0, "Lark deployment controls do not masquerade as strategy controls");
+  await page.getByRole("button", { name: "50% apyUSD", exact: true }).click();
+  check(await page.getByTestId("strategy-apr").innerText() === "5.35%", "50% allocation matches the independently pinned result");
+  check((await page.locator(".strategies .banner").innerText()).includes("activation blocked"), "positive apyUSD allocation remains visibly blocked");
+  await page.getByLabel("Blended harvest fee", { exact: true }).fill("22");
+  await page.getByLabel("apyUSD / PRIME HF", { exact: true }).fill("1.4");
+  await page.getByLabel("apyUSD / PRIME HF", { exact: true }).blur();
+  await page.waitForTimeout(800);
+  const link = page.url();
+  const expected = await page.locator("[aria-label='two-strategy results']").innerText();
+  check(new URL(link).hash.includes("ts=1."), "strategy settings reach a versioned share link");
+  const back = await open(link);
+  check(await back.locator("[aria-label='two-strategy results']").innerText() === expected, "shared settings restore all headline results");
+  check(await back.getByLabel("Blended harvest fee", { exact: true }).inputValue() === "22", "share restores the blended fee");
+  await back.getByRole("button", { name: "Overview", exact: true }).click();
+  await back.waitForSelector("header [aria-label=deployment]");
+  check(/jBTC net APR/i.test(await back.locator(".tiles").innerText()), "legacy overview still uses its own Lark model");
+  await back.getByRole("button", { name: "Two strategies", exact: true }).click();
+  check(await back.locator("[aria-label='two-strategy results']").innerText() === expected, "strategy settings survive switching to the legacy model");
+  const download = page.waitForEvent("download");
+  await page.getByRole("button", { name: "export results", exact: true }).click();
+  const file = await download;
+  const stream = await file.createReadStream();
+  let exported = "";
+  for await (const chunk of stream) exported += chunk;
+  const json = JSON.parse(exported);
+  check(json.params.weight === 0.5 && json.params.fee === 0.22 && json.snapshot.block === "16630324" && json.result.apyBlocked, "JSON export includes the scenario, pinned snapshot and blocked status");
+  await page.screenshot({ path: `${out}strategies-light.png`, fullPage: true });
+  await page.getByLabel("New depositor collateral", { exact: true }).fill("100000000");
+  await page.getByLabel("New depositor collateral", { exact: true }).blur();
+  check((await page.locator(".strategies .banner").innerText()).includes("exceeds capacity"), "oversized targets show capacity failure");
+  await page.getByRole("button", { name: "reset strategy assumptions", exact: true }).click();
+  check(await page.getByTestId("strategy-apr").innerText() === "6.78%", "reset restores the launch assumptions");
+  const mobile = await open(link, 390);
+  check(await mobile.evaluate(() => document.documentElement.scrollWidth <= innerWidth), "mobile has no page-wide horizontal overflow");
+  await mobile.screenshot({ path: `${out}strategies-mobile.png`, fullPage: true });
+  const dark = await open(link, 1440, "dark");
+  await dark.screenshot({ path: `${out}strategies-dark.png`, fullPage: true });
+  const broken = await open(`${origin}#t=strategies&ts=99.broken`);
+  check((await broken.locator(".main > .banner").innerText()).includes("could not read strategy settings"), "invalid links show an error and safe defaults");
+  check(await broken.getByTestId("strategy-apr").innerText() === "6.78%", "invalid link fallback keeps apyUSD at zero");
+  check(errors.length === 0, `no browser errors (${errors.join(" | ")})`);
+} finally {
+  await browser.close();
+}

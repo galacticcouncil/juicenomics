@@ -13,6 +13,9 @@ npm run sim -- live --block 40000                   # chain state as a config + 
 npm run sim -- live --deployment lark0              # Lark 0's chain state: jETH on GIGAETH
 npm run sim -- backtest [--deployment lark0]        # replay a deployment's history against the simulator
 npm run sim -- hollar                               # HOLLAR supply, facilitator buckets, HSM inventory (mainnet)
+npm run sim -- strategies --weight 0.25 --fee 0.69    # marginal two-strategy carry, pinned mainnet, Main still HOLLAR
+npm run sim -- strategies --params                   # independent strategy settings, ranges and defaults
+npm run sim -- vdot --fee 0.69 --set hf=1.01          # direct DOT funding and vDOT/DOT loop
 npm run sim -- link 'https://juicenomics.lark.hydration.cloud/#s=2z…'   # decode a share link
 ```
 
@@ -76,3 +79,27 @@ Options apply in this order, and all of them are optional: `--deployment`, then 
 - **HOLLAR:** each $1 deposited borrows about L·ℓ HOLLAR, all of it sold for PRIME. `market.hollarHeadroomUsd` defaults to the mainnet facilitator's headroom (2.13M on 21 Oct), and the closed form flags configs that exceed it.
 - **Growth:** `flows.growth` grows TVL in dollars, so falling prices slow it in the Monte Carlo. The closed form grows it at today's prices.
 - **Publishing:** `scripts/publish-lark.sh` deploys the web app. Only run it when a human asked for a deploy.
+
+## two-strategy preview
+
+- `sim strategies` evaluates the same model as the **Two strategies** tab. `--tvl` is additional depositor collateral, `--weight` is the apyUSD fraction and `--fee` is the single blended fee. `--set key=number` accepts the keys in `strategies --params`; `--link` and `--config` restore strategy settings. Legacy flags such as `--live` are rejected.
+- Main debt stays HOLLAR. The legacy strategy supplies PRIME and borrows HOLLAR; the new strategy supplies apyUSD and borrows appreciating PRIME in a separate account. There is no active reallocation model. Start with 0% apyUSD.
+- The snapshot is pinned to mainnet block 16630324, 2026-11-05. Positive apyUSD allocations are hypothetical: the oracle, isolation eligibility and isolation ceiling are blocked. Passing capacity checks is not evidence of executability. The model does not quote swaps or run a second-pool Monte Carlo.
+- Links use an independent `ts=1.` token with complete strategy settings and `t=strategies`; v1–v3 legacy links retain their existing meaning. `sim link` decodes either type. Legacy `cf`/`mc` reject strategy links instead of silently running PRIME only.
+- `SIM_URL=http://localhost:4173/ node scripts/smoke-strategies.mjs` checks the new view, sharing, export, blockers, mobile layout and legacy-tab isolation. The original `scripts/smoke.mjs` still checks the legacy model.
+- `scripts/publish-lark.sh two-strategy` publishes only the separate preview stack/subdomain, with a distinct image tag. The no-argument command remains production. See [docs/two-strategy.md](docs/two-strategy.md) for scope and reproduction.
+
+## vDOT / DOT alternative
+
+- `sim vdot` and the **vDOT / DOT** tab default to **original collateral → borrow DOT → buy vDOT → supply vDOT → borrow more DOT**. Both loans owe DOT; no HOLLAR funding or discount applies. This replaces the earlier HOLLAR-funded preview at the user's request.
+- Default fee 69%, loop HF 1.01, vault LTV 75%. The pinned GIGAETH standard-mode reference has 80% max LTV / 85% LT. The separate vDOT loop uses DOT eMode, 85% max LTV / 92% LT. HF 1.01 exceeds the loop borrow limit and gross cap; keep both flags.
+- Both DOT loans affect reserve debt, route re-supply and utilization. Both pay the selected rate. Protocol income includes the harvest fee and 10% reserve-factor income on both loans; the remaining DOT interest goes to suppliers. Never credit all vault DOT interest to the protocol.
+- `dotBorrowApr: null` uses the curve; `--set dotBorrowApr=0.03` selects 3%, `--set dotBorrowApr=null` restores it. Zero is valid. The manual rate is shared by both DOT loans. Exports include `dotMarketBorrowRate` for comparison.
+- Carry charges the harvest fee on positive source carry after loop interest, then pays the initial vault funding loan's interest. Native vDOT growth is DOT-per-vDOT feed growth, excluding DOT/USD and incentive rewards.
+- The oracle multiplies Bifrost's ten-minute conversion rate by the shared DOT/USD feed. Market discounts do not affect loop oracle HF. Common DOT moves leave principal matched after including the DOT funding loan; the original vault's collateral/DOT exposure still affects its own HF. Price shocks hold original collateral fixed in USD and omit keeper response.
+- `src/data/vdot-market.json` stays pinned at #16706517. `vdot-funding.json` cross-checks GIGAETH limits on two RPCs. `vdot-oracle.json` verifies the adapter product and code hash. `vdot-dot-quotes.json` contains real SDK quotes for DOT funding, including 4.95 bps seed cost; quotes are independent, not a sequential ramp. Keep earlier HOLLAR quotes frozen.
+- New links use `vd4`; vd1–vd3 retain HOLLAR funding, including 40% default Main discount. vd1 keeps HF 1.15, vd2/vd3 HF 1.01. `fundingAsset` is DOT by default; HOLLAR is supported for saved scenarios. A nonzero `mainDiscount` is rejected in DOT mode. Legacy engines reject vDOT links.
+- The PRIME benchmark remains HOLLAR-funded with its own 40% Main discount and existing loop assumptions. The older two-strategy view retains its own snapshot and settings.
+- The deployed Main ledger is immutable HOLLAR-bound. Direct DOT funding requires a different debt ledger and reviewed vault/repayment/settlement integration, plus the vDOT source and keeper. This is preview/economics only; no contract deployment or migration is included.
+- `scripts/check-vdot-funding.mjs`, `scripts/check-vdot-oracle.mjs` and `scripts/quote-vdot.mjs ... DOT` reproduce evidence. `scripts/smoke-vdot.mjs` covers funding, both HFs, configurable rates, old/new sharing, export and mobile. See [docs/vdot-dot.md](docs/vdot-dot.md).
+- `scripts/publish-lark.sh vdot` targets only `juicenomics-vdot.lark.hydration.cloud` with distinct image tags. The host opens vDOT by default; `EXPECT_DEFAULT_TAB=vdot` checks that behavior.

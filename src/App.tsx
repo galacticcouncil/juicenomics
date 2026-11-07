@@ -14,9 +14,17 @@ import { Model } from "./ui/views/Model";
 import { Simulation } from "./ui/views/Simulation";
 import { useMonteCarlo } from "./ui/useMonteCarlo";
 import { LiveLoader } from "./ui/LiveLoader";
+import { Strategies } from "./ui/views/Strategies";
+import { STRATEGY_DEFAULTS, type StrategyParams } from "./engine/model/twoStrategy";
+import { decodeStrategies, encodeStrategies } from "./engine/share/strategies";
+import { Vdot } from "./ui/views/Vdot";
+import { VDOT_DEFAULTS, type VdotParams } from "./engine/model/vdot";
+import { decodeVdot, encodeVdot } from "./engine/share/vdot";
 
-type Tab = "overview" | "simulation" | "explore" | "compare" | "model";
+type Tab = "vdot" | "strategies" | "overview" | "simulation" | "explore" | "compare" | "model";
 const TABS: { key: Tab; label: string }[] = [
+  { key: "strategies", label: "Two strategies" },
+  { key: "vdot", label: "vDOT / DOT" },
   { key: "overview", label: "Overview" },
   { key: "simulation", label: "Simulation" },
   { key: "explore", label: "Explore & optimize" },
@@ -32,7 +40,16 @@ export default function App() {
   const [A, setA] = useState<Params>(() => clone(LARK4));
   const [B, setB] = useState<Params | null>(null);
   const [side, setSide] = useState<"A" | "B">("A");
-  const [tab, setTab] = useState<Tab>(() => (readHash().t as Tab) || "overview");
+  const [tab, setTab] = useState<Tab>(() => {
+    const h = readHash();
+    if (TABS.some((t) => t.key === h.t)) return h.t as Tab;
+    if (h.vd) return "vdot";
+    if (h.ts) return "strategies";
+    const defaultTab = import.meta.env.VITE_DEFAULT_TAB;
+    return !location.hash && (defaultTab === "strategies" || defaultTab === "vdot") ? defaultTab : "overview";
+  });
+  const [strategies, setStrategies] = useState<StrategyParams>({ ...STRATEGY_DEFAULTS });
+  const [vdot, setVdot] = useState<VdotParams>({ ...VDOT_DEFAULTS });
   const [toast, setToast] = useState<string | null>(null);
   const [banner, setBanner] = useState<string | null>(null);
   const [theme, setTheme] = useState<"auto" | "light" | "dark">(() => (localStorage.getItem("js:theme") as "light" | "dark") || "auto");
@@ -49,6 +66,16 @@ export default function App() {
       const token = h.s ?? (location.hash ? (legacyA ? eraDefaults(eraB) : "") : localStorage.getItem("js:last") ?? "");
       const a = await decode(token);
       const notes: string[] = [];
+      const vdotToken = h.vd ?? (!location.hash ? localStorage.getItem("js:vdot") : null);
+      if (vdotToken) {
+        try { setVdot(decodeVdot(vdotToken)); }
+        catch (e) { notes.push(`could not read vDOT settings (${(e as Error).message}); showing the pinned defaults`); }
+      }
+      const strategyToken = h.ts ?? (!location.hash ? localStorage.getItem("js:strategies") : null);
+      if (strategyToken) {
+        try { setStrategies(decodeStrategies(strategyToken)); }
+        catch (e) { notes.push(`could not read strategy settings (${(e as Error).message}); showing the 0% apyUSD defaults`); }
+      }
       if (a.error) notes.push(`could not read the shared config (${a.error}); showing Lark 4 defaults`);
       if (a.era) notes.push(`this ${location.hash ? "link" : "saved session"} predates the 30 Oct Lark 4 refork (jBTC alone, headroom exits): it opens with the settings it was made with, jETH included; reset to Lark 4 for today's`);
       if (a.ignored.length) notes.push(`ignored unknown settings: ${a.ignored.join(", ")}`);
@@ -82,13 +109,17 @@ export default function App() {
       const q = new URLSearchParams();
       if (s) q.set("s", s);
       if (B && b) q.set("b", b);
-      if (tab !== "overview") q.set("t", tab);
+      q.set("t", tab);
+      if (tab === "strategies" || JSON.stringify(strategies) !== JSON.stringify(STRATEGY_DEFAULTS)) q.set("ts", encodeStrategies(strategies));
+      if (tab === "vdot" || JSON.stringify(vdot) !== JSON.stringify(VDOT_DEFAULTS)) q.set("vd", encodeVdot(vdot));
       const hash = q.toString();
       history.replaceState(null, "", hash ? `#${hash}` : location.pathname + location.search);
       localStorage.setItem("js:last", s);
+      localStorage.setItem("js:strategies", encodeStrategies(strategies));
+      localStorage.setItem("js:vdot", encodeVdot(vdot));
     }, 300);
     return () => clearTimeout(id);
-  }, [A, B, tab]);
+  }, [A, B, tab, strategies, vdot]);
 
   const cur = side === "B" && B ? B : A;
   const setCur = side === "B" && B ? setB as (p: Params) => void : setA;
@@ -102,6 +133,7 @@ export default function App() {
   const issues = validate(cur).issues.concat(result.issues);
   const chain = DEPLOYMENT[cur.deployment].name;
   const snapshot = SNAPSHOTS[cur.deployment];
+  const sourcePreview = tab === "strategies" || tab === "vdot";
 
   const share = async () => {
     await new Promise((r) => setTimeout(r, 350));
@@ -115,9 +147,10 @@ export default function App() {
   };
 
   return (
-    <div className="app">
+    <div className={`app${sourcePreview ? " strategy-app" : ""}`}>
       <header className="top">
         <span className="brand">Juicenomics<small>Juicer economics · model estimates, not a promise</small></span>
+        {sourcePreview ? <span className="muted small">{tab === "vdot" ? "vDOT / DOT alternative" : "two-strategy preview"} · pinned mainnet assumptions</span> : <>
         <select aria-label="deployment" value={cur.deployment} onChange={(e) => setCur(clone(baseline(e.target.value)))} title="the chain the scenario models, and the vault it runs; switching loads that chain's settings and state">
           {DEPLOYMENT_KEYS.map((k) => <option key={k} value={k}>{DEPLOYMENT[k].label}</option>)}
         </select>
@@ -133,6 +166,7 @@ export default function App() {
         <button onClick={() => setCur(clone(baseline(cur.deployment)))} title={`${chain}'s settings at block ${snapshot.evmBlock}, fresh start`}>reset to {chain}</button>
         <LiveLoader p={cur} onApply={setCur} onLoaded={setBanner} />
         <span className="muted small" title="where the simulation starts: a fresh ramp, or the chain's loop and vault positions at a block">{cur.sim.initial === "fresh" ? "fresh start" : `state @ ${cur.sim.stateBlock.toLocaleString("en-US")} ${cur.sim.stateBlock === snapshot.evmBlock ? "(snapshot)" : "(live)"}`}</span>
+        </>}
         <span className="spacer" />
         <select value={theme} onChange={(e) => setTheme(e.target.value as "auto" | "light" | "dark")} title="theme">
           <option value="auto">system theme</option>
@@ -141,13 +175,15 @@ export default function App() {
         </select>
         <button className="primary" onClick={share}>share link</button>
       </header>
-      <ParamPanel p={cur} set={set} />
+      {!sourcePreview && <ParamPanel p={cur} set={set} />}
       <main className="main">
         <nav className="tabs">
           {TABS.map((t) => <button key={t.key} className={tab === t.key ? "on" : ""} onClick={() => setTab(t.key)}>{t.label}</button>)}
-          <span className="muted small" style={{ alignSelf: "center", marginLeft: 8 }}>editing scenario {side}{B ? "" : " (add B to compare)"}</span>
+          {!sourcePreview && <span className="muted small" style={{ alignSelf: "center", marginLeft: 8 }}>legacy PRIME / HOLLAR · editing scenario {side}{B ? "" : " (add B to compare)"}</span>}
         </nav>
         {banner && <div className="banner">{banner} <button onClick={() => setBanner(null)}>dismiss</button></div>}
+        {tab === "strategies" && <Strategies p={strategies} onChange={setStrategies} />}
+        {tab === "vdot" && <Vdot p={vdot} onChange={setVdot} />}
         {tab === "overview" && <Overview p={deferred} r={result} issues={issues} onApply={setCur} />}
         {tab === "simulation" && <Simulation p={cur} mc={mc} onApply={setCur} />}
         {tab === "explore" && <Explore p={cur} onApply={setCur} />}

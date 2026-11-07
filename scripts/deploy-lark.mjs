@@ -1,28 +1,44 @@
 import { readFile } from 'node:fs/promises'
 import { setTimeout } from 'node:timers/promises'
+import { homedir } from 'node:os'
 
-const token = process.env.SWARMPIT_TOKEN?.trim()
+const target = process.env.DEPLOY_TARGET ?? 'production'
+if (!['production', 'two-strategy', 'vdot'].includes(target)) throw new Error('unknown deployment target')
+const preview = target !== 'production'
+const name = preview ? `juicenomics-${target}` : 'juicenomics'
+const site = `https://${name}.lark.hydration.cloud`
+const tagSuffix = preview ? `-${target}` : ''
 const image = process.env.DEPLOY_IMAGE
 const revision = process.env.DEPLOY_REVISION
-if (!token || !/^[a-f0-9]{40}$/.test(revision ?? '') ||
-    !new RegExp(`^galacticcouncil/juicenomics:${revision}@sha256:[a-f0-9]{64}$`).test(image ?? '')) {
-  throw new Error('SWARMPIT_TOKEN, DEPLOY_IMAGE and DEPLOY_REVISION are required')
+if (!/^[a-f0-9]{40}$/.test(revision ?? '') ||
+    !new RegExp(`^galacticcouncil/juicenomics:${revision}${tagSuffix}@sha256:[a-f0-9]{64}$`).test(image ?? '')) {
+  throw new Error('DEPLOY_IMAGE must match DEPLOY_REVISION and DEPLOY_TARGET')
 }
 
-const compose = (await readFile(new URL('../docker/stack.lark.yml', import.meta.url), 'utf8'))
+const compose = (await readFile(new URL(`../docker/stack.${preview ? target : 'lark'}.yml`, import.meta.url), 'utf8'))
   .replace(/^(    image: ).+$/m, `$1${image}`)
-const response = await fetch('https://swarmpit.lark.hydration.cloud/api/stacks/juicenomics', {
+if (process.env.DEPLOY_DRY_RUN === '1') {
+  console.log(JSON.stringify({ name, site, compose, revision, image }))
+  process.exit(0)
+}
+const token = (process.env.SWARMPIT_TOKEN ?? await readFile(process.env.SWARMPIT_TOKEN_FILE ?? `${homedir()}/.lark_token`, 'utf8')).trim()
+if (!token) throw new Error('empty Swarmpit token')
+const headers = { Authorization: token.startsWith('Bearer ') ? token : `Bearer ${token}`, 'Content-Type': 'application/json' }
+const base = 'https://swarmpit.lark.hydration.cloud/api/stacks'
+const stacksResponse = await fetch(base, { headers, signal: AbortSignal.timeout(15_000) })
+if (!stacksResponse.ok) throw new Error(`stack lookup failed: HTTP ${stacksResponse.status}`)
+const stacks = await stacksResponse.json()
+if (!Array.isArray(stacks)) throw new Error('unexpected stack list response')
+const exists = stacks.some((s) => s.stackName === name)
+if (!preview && !exists) throw new Error('production stack missing; refusing to create it')
+const response = await fetch(exists ? `${base}/${name}` : base, {
   method: 'POST',
-  headers: {
-    Authorization: token.startsWith('Bearer ') ? token : `Bearer ${token}`,
-    'Content-Type': 'application/json',
-  },
-  body: JSON.stringify({ name: 'juicenomics', spec: { compose } }),
+  headers,
+  body: JSON.stringify({ name, spec: { compose } }),
   signal: AbortSignal.timeout(120_000),
 })
 if (!response.ok) throw new Error(`stack deployment failed: HTTP ${response.status}`)
 
-const site = 'https://juicenomics.lark.hydration.cloud'
 for (let attempt = 0; attempt < 60; attempt++) {
   try {
     const [version, health] = await Promise.all([

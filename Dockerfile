@@ -8,7 +8,8 @@ COPY tsconfig*.json vite.config.ts vitest.config.ts index.html ./
 COPY src ./src
 COPY test ./test
 COPY public ./public
-RUN npm run build
+ARG APP_DEFAULT_TAB=overview
+RUN VITE_DEFAULT_TAB="$APP_DEFAULT_TAB" npm run build
 ARG VCS_REF
 RUN printf '%s\n' "$VCS_REF" > /app/dist/version.txt
 

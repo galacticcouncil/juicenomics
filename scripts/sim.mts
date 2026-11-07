@@ -11,6 +11,12 @@ import { backtest } from "./lib/backtest.mts";
 import { buildParams, deploymentOf, flag, num, parseArgs, str, type Args } from "./lib/config.mts";
 import { hollarState } from "./lib/hollar.mts";
 import { runMc, seriesBands, summarize } from "./lib/mc.mts";
+import { strategyCommand } from "./lib/strategies.mts";
+import { decodeStrategies } from "../src/engine/share/strategies";
+import { STRATEGY_DEFAULTS } from "../src/engine/model/twoStrategy";
+import { vdotCommand } from "./lib/vdot.mts";
+import { decodeVdot } from "../src/engine/share/vdot";
+import { VDOT_DEFAULTS } from "../src/engine/model/vdot";
 
 const SITE = "https://juicenomics.lark.hydration.cloud/";
 
@@ -21,6 +27,11 @@ commands
   params [--group g] [--search text]   every setting: path, url code, unit, range, lever, default, help
   presets                              named scenarios
   cf                                   closed form for the config
+  vdot [--params] [--tvl usd] [--fee fraction] [--set key=value] [--link url] [--config file]
+                                       vDOT / DOT alternative, HOLLAR Main; flat-price carry and separate price shocks
+  strategies [--params] [--tvl usd] [--weight fraction] [--fee fraction] [--set key=number]
+                                       two-strategy marginal carry; pinned mainnet, HOLLAR Main, no reallocation
+                                       --link / --config restore strategy settings, separate from legacy configs
   mc [--paths 64] [--horizon 365] [--workers n] [--exact] [--series] [--fields a,b]
                                        Monte Carlo, parallel; per-field mean/se/p5…p95 plus the closed form
   search [--tier today|contract|all] [--knobs a,b] [--metric worst] [--min-apr x] [--min-protocol x]
@@ -96,6 +107,8 @@ async function main() {
       snapshotTime: new Date(SNAPSHOTS[k].timestamp * 1000).toISOString(), default: k === "lark4",
     })));
   }
+  if (cmd === "strategies") return out(a, strategyCommand(a));
+  if (cmd === "vdot") return out(a, vdotCommand(a));
   const base = baseline(deploymentOf(a));
   if (cmd === "params") {
     const g = str(a, "group", "");
@@ -116,6 +129,15 @@ async function main() {
   }
   if (cmd === "link" && a._[1]) {
     const tokenArg = a._[1];
+    const hash = tokenArg.includes("#") ? new URLSearchParams(tokenArg.slice(tokenArg.indexOf("#") + 1)) : null;
+    const vdotView = /^vd\d+\./.test(tokenArg) || hash?.get("t") === "vdot" || (!hash?.get("t") && hash?.has("vd"));
+    if (vdotView) {
+      const token = /^vd\d+\./.test(tokenArg) ? tokenArg : hash?.get("vd");
+      return out(a, { model: "vdot", params: token ? decodeVdot(token) : VDOT_DEFAULTS });
+    }
+    const strategyView = tokenArg.startsWith("1.") || hash?.get("t") === "strategies" || (!hash?.get("t") && hash?.has("ts"));
+    const strategyToken = tokenArg.startsWith("1.") ? tokenArg : hash?.get("ts");
+    if (strategyView) return out(a, { model: "strategies", params: strategyToken ? decodeStrategies(strategyToken) : STRATEGY_DEFAULTS });
     const token = tokenArg.includes("#") ? (new URLSearchParams(tokenArg.slice(tokenArg.indexOf("#") + 1)).get("s") ?? "") : tokenArg;
     const d = await decode(token);
     return out(a, { error: d.error, ignored: d.ignored, clamped: d.clamped, diff: diff(d.params), params: flag(a, "full") ? d.params : undefined });

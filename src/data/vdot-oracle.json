@@ -1,0 +1,56 @@
+{
+  "observedAt": "2026-11-07T00:51:28.160Z",
+  "rpcs": [
+    "https://hdx.tarn.hydration.cloud",
+    "https://rpc.hydradx.cloud"
+  ],
+  "crossRpcMatches": true,
+  "formula": "vDOT/USD = floor(Bifrost DOT-per-vDOT ten-minute EMA × shared DOT/USD / 1e8)",
+  "ratioKind": "Bifrost conversion-rate feed; not the vDOT/DOT market trading price",
+  "pinned": {
+    "block": "16706517",
+    "hash": "0x95fc79bfdb3d780b1839ece009bd62cb9e89d12d11f2afe99de715f9a3334683",
+    "evmHash": "0xeae54be3a2b7b1e35a4d8273668b558169388481c0e89053e59e119576439fb2",
+    "timestamp": "1794006660",
+    "source": "0x2fFa376E0a84606e4Ccb3738071312A34Cebad6C",
+    "ratioSource": "0x00000102626966726F73746f000000050000000f",
+    "usdSource": "0xFBCa0A6dC5B74C042DF23025D99ef0F1fcAC6702",
+    "ratio8": "166923945",
+    "dotUsd8": "91825381",
+    "vdotUsd8": "153278548",
+    "formulaResidual8": "0",
+    "sameDotUsdSource": true,
+    "codeMatchesArtifact": true,
+    "codeHash": "0x48cd33c7ccd80a5cfb935f10a2b1a07f025f5e7885ead7666e02251888053445",
+    "eMode": {
+      "ltv": 8500,
+      "liquidationThreshold": 9200,
+      "liquidationBonus": 10450,
+      "priceSource": "0x0000000000000000000000000000000000000000",
+      "label": "DOT"
+    }
+  },
+  "current": {
+    "block": "16709371",
+    "hash": "0x1b5ae97eb7b209c1508bb3c910841660b446020e684b1b30c8911992723cf23a",
+    "evmHash": "0x71d722f47a6cc4f9df33832619ed53068d2e8c07a50dcc7b067002626b005fef",
+    "timestamp": "1794012630",
+    "source": "0x2fFa376E0a84606e4Ccb3738071312A34Cebad6C",
+    "ratioSource": "0x00000102626966726F73746f000000050000000f",
+    "usdSource": "0xFBCa0A6dC5B74C042DF23025D99ef0F1fcAC6702",
+    "ratio8": "166923945",
+    "dotUsd8": "90867564",
+    "vdotUsd8": "151679722",
+    "formulaResidual8": "0",
+    "sameDotUsdSource": true,
+    "codeMatchesArtifact": true,
+    "codeHash": "0x48cd33c7ccd80a5cfb935f10a2b1a07f025f5e7885ead7666e02251888053445",
+    "eMode": {
+      "ltv": 8500,
+      "liquidationThreshold": 9200,
+      "liquidationBonus": 10450,
+      "priceSource": "0x0000000000000000000000000000000000000000",
+      "label": "DOT"
+    }
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "block": "16706517",
+  "hash": "0x95fc79bfdb3d780b1839ece009bd62cb9e89d12d11f2afe99de715f9a3334683",
+  "rpcs": [
+    "https://hdx.tarn.hydration.cloud",
+    "https://rpc.hydradx.cloud"
+  ],
+  "crossRpcMatches": true,
+  "collateral": "GIGAETH",
+  "mainEMode": 0,
+  "sourceEMode": 2,
+  "reserve": {
+    "address": "0x0000000000000000000000000000000100001068",
+    "configuration": "1128142248241621894702555553377248808488946780872512",
+    "ltvBps": 8000,
+    "ltBps": 8500,
+    "eMode": 3,
+    "active": 1,
+    "frozen": 0,
+    "paused": 0,
+    "isolationCeilingUSD2": 0
+  },
+  "scope": "GIGAETH standard-mode reference for a new DOT-funded Main account; existing deployed Main remains HOLLAR-bound"
+}
